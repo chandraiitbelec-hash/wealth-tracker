@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { StockHolding, MFHolding } from '@/types/portfolio'
 import { fmtCurrency, fmt } from '@/lib/portfolio'
 import { ChevronDown, ChevronUp, TrendingUp, TrendingDown } from 'lucide-react'
@@ -69,8 +70,24 @@ export function StocksTable({ holdings }: { holdings: StockHolding[] }) {
             {sorted.map((h, i) => (
               <tr key={i} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-sm text-gray-900">{h.companyName || h.stockName}</div>
-                  <div className="text-xs text-gray-400 font-mono">{h.symbol || h.isin}</div>
+                  {h.symbol ? (
+                    <Link
+                      href={`/stock/${h.symbol}?qty=${h.quantity}&avgBuy=${h.avgBuyPrice ?? 0}`}
+                      className="group"
+                    >
+                      <div className="font-medium text-sm text-gray-900 group-hover:text-indigo-600 transition-colors">
+                        {h.companyName || h.stockName}
+                      </div>
+                      <div className="text-xs text-gray-400 font-mono group-hover:text-indigo-400 transition-colors">
+                        {h.symbol || h.isin}
+                      </div>
+                    </Link>
+                  ) : (
+                    <>
+                      <div className="font-medium text-sm text-gray-900">{h.companyName || h.stockName}</div>
+                      <div className="text-xs text-gray-400 font-mono">{h.isin}</div>
+                    </>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {h.sector ? (
@@ -151,8 +168,22 @@ export function MFTable({ holdings }: { holdings: MFHolding[] }) {
             {sorted.map((h, i) => (
               <tr key={i} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3 max-w-xs">
-                  <div className="font-medium text-sm text-gray-900 leading-tight">{h.schemeName}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{h.amc}</div>
+                  {h.schemeCode ? (
+                    <Link
+                      href={`/fund/${h.schemeCode}?units=${h.units}&invested=${h.investedValue}`}
+                      className="group"
+                    >
+                      <div className="font-medium text-sm text-gray-900 group-hover:text-indigo-600 transition-colors leading-tight">
+                        {h.schemeName}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5 group-hover:text-indigo-400 transition-colors">{h.amc}</div>
+                    </Link>
+                  ) : (
+                    <>
+                      <div className="font-medium text-sm text-gray-900 leading-tight">{h.schemeName}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{h.amc}</div>
+                    </>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span className="inline-block text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-lg">
