@@ -6,21 +6,75 @@ import { ParsedPortfolio } from '@/types/portfolio'
 import SummaryCards from '@/components/SummaryCards'
 import AllocationChart from '@/components/AllocationChart'
 import { StocksTable, MFTable } from '@/components/HoldingsTable'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import {
+  applyEnrichment,
+  buildPortfolioSummary,
+  buildAssetAllocation,
+  buildMFCategoryAllocation,
+  buildSectorAllocation,
+} from '@/lib/portfolio'
+import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react'
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<ParsedPortfolio | null>(null)
   const [clientName, setClientName] = useState('')
   const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf'>('overview')
+  const [enriching, setEnriching] = useState(false)
+  const [enriched, setEnriched] = useState(false)
+  const [enrichError, setEnrichError] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
     const raw = sessionStorage.getItem('portfolio')
     const name = sessionStorage.getItem('clientName')
     if (!raw) { router.push('/'); return }
-    setPortfolio(JSON.parse(raw))
+    const p = JSON.parse(raw) as ParsedPortfolio
+    setPortfolio(p)
     setClientName(name || '')
-  }, [router])
+    // Auto-enrich on load
+    enrichPortfolio(p)
+  }, [])
+
+  const enrichPortfolio = async (p: ParsedPortfolio) => {
+    setEnriching(true)
+    setEnrichError(null)
+    try {
+      const res = await fetch('/api/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stockIsins:    p.stocks.map((s) => s.isin),
+          mfSchemeNames: p.mutualFunds.map((m) => m.schemeName),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+
+      const { stocks, mf } = applyEnrichment(
+        p.stocks,
+        p.mutualFunds,
+        data.stockEnrichment,
+        data.mfEnrichment
+      )
+
+      // Rebuild derived data with enriched holdings
+      const enrichedPortfolio: ParsedPortfolio = {
+        ...p,
+        stocks,
+        mutualFunds: mf,
+        summary:              buildPortfolioSummary(stocks, mf),
+        assetAllocation:      buildAssetAllocation(stocks, mf),
+        mfCategoryAllocation: buildMFCategoryAllocation(mf),
+      }
+
+      setPortfolio(enrichedPortfolio)
+      setEnriched(true)
+    } catch (err: any) {
+      setEnrichError(err.message)
+    } finally {
+      setEnriching(false)
+    }
+  }
 
   if (!portfolio) {
     return (
@@ -29,6 +83,9 @@ export default function PortfolioPage() {
       </div>
     )
   }
+
+  const sectorAllocation = buildSectorAllocation(portfolio.stocks)
+  const hasSectors = sectorAllocation.some((s) => s.name !== 'Unknown')
 
   const tabs = [
     { key: 'overview', label: 'Overview' },
@@ -58,13 +115,37 @@ export default function PortfolioPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => router.push('/')}
-            className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition font-medium"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh data
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Enrichment status badge */}
+            {enriching && (
+              <span className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg">
+                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Enriching with live data...
+              </span>
+            )}
+            {enriched && !enriching && (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg font-medium">
+                <Sparkles className="w-3.5 h-3.5" />
+                Live data applied
+              </span>
+            )}
+            {enrichError && (
+              <span className="text-xs text-red-500 bg-red-50 px-3 py-1.5 rounded-lg">
+                DB unavailable — showing file data
+              </span>
+            )}
+
+            <button
+              onClick={() => router.push('/')}
+              className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition font-medium"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -88,7 +169,6 @@ export default function PortfolioPage() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* Summary cards always visible */}
         <SummaryCards summary={portfolio.summary} />
 
         {activeTab === 'overview' && (
@@ -104,9 +184,15 @@ export default function PortfolioPage() {
               />
             </div>
 
-            {/* Top movers */}
+            {/* Sector allocation — only shown if enrichment gave us sector data */}
+            {hasSectors && (
+              <AllocationChart
+                data={sectorAllocation}
+                title="Equity — Sector Breakdown"
+              />
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Top performing stocks */}
               {portfolio.stocks.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-semibold text-gray-800 mb-4">Top Stock Holdings</h3>
@@ -118,14 +204,17 @@ export default function PortfolioPage() {
                         <div key={i} className="flex items-center gap-3">
                           <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">{h.stockName}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-sm font-medium text-gray-800 truncate">
+                              {h.companyName || h.stockName}
+                            </p>
+                            {h.sector && (
+                              <p className="text-xs text-gray-400">{h.sector}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-1">
                               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-violet-400 rounded-full"
-                                  style={{
-                                    width: `${Math.min(100, (h.closingValue / portfolio.summary.stocksCurrentValue) * 100)}%`
-                                  }}
+                                  style={{ width: `${Math.min(100, (h.closingValue / portfolio.summary.stocksCurrentValue) * 100)}%` }}
                                 />
                               </div>
                               <span className="text-xs text-gray-500 shrink-0">
@@ -142,7 +231,6 @@ export default function PortfolioPage() {
                 </div>
               )}
 
-              {/* Top MF by value */}
               {portfolio.mutualFunds.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-semibold text-gray-800 mb-4">Top MF Holdings</h3>
@@ -155,13 +243,11 @@ export default function PortfolioPage() {
                           <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-800 truncate">{h.schemeName}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
+                            <div className="flex items-center gap-2 mt-1">
                               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-indigo-400 rounded-full"
-                                  style={{
-                                    width: `${Math.min(100, (h.currentValue / portfolio.summary.mfCurrentValue) * 100)}%`
-                                  }}
+                                  style={{ width: `${Math.min(100, (h.currentValue / portfolio.summary.mfCurrentValue) * 100)}%` }}
                                 />
                               </div>
                               <span className="text-xs text-gray-500 shrink-0">
@@ -169,7 +255,14 @@ export default function PortfolioPage() {
                               </span>
                             </div>
                           </div>
-                          <span className="text-xs font-semibold text-indigo-600 shrink-0">{h.xirr}</span>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-semibold text-indigo-600">{h.xirr}</p>
+                            {h.plan && (
+                              <p className={`text-xs font-medium ${h.plan === 'Direct' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                                {h.plan}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       ))}
                   </div>
@@ -182,17 +275,14 @@ export default function PortfolioPage() {
         {activeTab === 'stocks' && portfolio.stocks.length > 0 && (
           <StocksTable holdings={portfolio.stocks} />
         )}
-
         {activeTab === 'mf' && portfolio.mutualFunds.length > 0 && (
           <MFTable holdings={portfolio.mutualFunds} />
         )}
-
         {activeTab === 'stocks' && portfolio.stocks.length === 0 && (
           <div className="bg-white rounded-2xl p-12 text-center text-gray-400 border border-gray-100">
             No stock holdings uploaded.
           </div>
         )}
-
         {activeTab === 'mf' && portfolio.mutualFunds.length === 0 && (
           <div className="bg-white rounded-2xl p-12 text-center text-gray-400 border border-gray-100">
             No mutual fund holdings uploaded.

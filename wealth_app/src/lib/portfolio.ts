@@ -110,6 +110,87 @@ export function buildParsedPortfolio(
   }
 }
 
+/**
+ * Apply DB enrichment data onto parsed holdings.
+ * Adds sector, company name, our live price/NAV, and recalculates P&L
+ * using our own prices where available.
+ */
+export function applyEnrichment(
+  stocks: StockHolding[],
+  mf: MFHolding[],
+  stockEnrichment: Record<string, any>,
+  mfEnrichment: Record<string, any>
+): { stocks: StockHolding[]; mf: MFHolding[] } {
+  const enrichedStocks = stocks.map((h) => {
+    const e = stockEnrichment[h.isin]
+    if (!e) return h
+
+    const ourPrice = e.our_price ? parseFloat(e.our_price) : null
+    const ourValue = ourPrice ? ourPrice * h.quantity : null
+    const ourPnL = ourValue ? ourValue - h.buyValue : null
+
+    return {
+      ...h,
+      symbol:            e.symbol ?? h.stockName,
+      companyName:       e.company_name ?? h.stockName,
+      sector:            e.sector ?? undefined,
+      industry:          e.industry ?? undefined,
+      marketCapCategory: e.market_cap_category ?? undefined,
+      ourPrice:          ourPrice ?? undefined,
+      ourValue:          ourValue ?? undefined,
+      ourPnL:            ourPnL ?? undefined,
+      ourPnLPercent:     ourPnL && h.buyValue > 0 ? (ourPnL / h.buyValue) * 100 : undefined,
+      priceDate:         e.price_date ?? undefined,
+      enriched:          true,
+    }
+  })
+
+  const enrichedMf = mf.map((h) => {
+    const e = mfEnrichment[h.schemeName]
+    if (!e) return h
+
+    const ourNav = e.our_nav ? parseFloat(e.our_nav) : null
+    const ourValue = ourNav ? ourNav * h.units : null
+    const ourReturns = ourValue ? ourValue - h.investedValue : null
+
+    return {
+      ...h,
+      schemeCode:     e.scheme_code ?? undefined,
+      plan:           e.plan ?? h.schemeName.toLowerCase().includes('direct') ? 'Direct' : undefined,
+      option:         e.option ?? undefined,
+      schemeCategory: e.scheme_category ?? h.category,
+      ourNav:         ourNav ?? undefined,
+      ourValue:       ourValue ?? undefined,
+      ourReturns:     ourReturns ?? undefined,
+      navDate:        e.nav_date ?? undefined,
+      matchedAs:      e.matched_as ?? undefined,
+      enriched:       true,
+    }
+  })
+
+  return { stocks: enrichedStocks, mf: enrichedMf }
+}
+
+export function buildSectorAllocation(stocks: StockHolding[]): AllocationSlice[] {
+  const total = stocks.reduce((s, h) => s + h.closingValue, 0)
+  if (total === 0) return []
+
+  const bySector: Record<string, number> = {}
+  for (const h of stocks) {
+    const key = h.sector || h.industry || 'Unknown'
+    bySector[key] = (bySector[key] || 0) + h.closingValue
+  }
+
+  return Object.entries(bySector)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, value], i) => ({
+      name,
+      value,
+      percent: (value / total) * 100,
+      color: ALLOCATION_COLORS[i % ALLOCATION_COLORS.length],
+    }))
+}
+
 export function fmt(value: number, decimals = 2): string {
   return new Intl.NumberFormat('en-IN', {
     minimumFractionDigits: decimals,

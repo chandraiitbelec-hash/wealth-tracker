@@ -4,14 +4,22 @@ export interface StockHolding {
   quantity: number
   avgBuyPrice: number
   buyValue: number
-  closingPrice: number
+  closingPrice: number       // from Groww file
   closingValue: number
   unrealisedPnL: number
   pnlPercent: number
   // enriched from DB
   symbol?: string
+  companyName?: string
   sector?: string
   industry?: string
+  marketCapCategory?: string
+  ourPrice?: number          // our latest price from daily_prices
+  ourValue?: number          // quantity * ourPrice
+  ourPnL?: number
+  ourPnLPercent?: number
+  priceDate?: string
+  enriched?: boolean
 }
 
 export interface MFHolding {
@@ -23,13 +31,20 @@ export interface MFHolding {
   source: string
   units: number
   investedValue: number
-  currentValue: number
+  currentValue: number       // from Groww file
   returns: number
   xirr: string
   // enriched from DB
   schemeCode?: string
   plan?: string
   option?: string
+  schemeCategory?: string
+  ourNav?: number            // our latest NAV from daily_prices
+  ourValue?: number          // units * ourNav
+  ourReturns?: number
+  navDate?: string
+  enriched?: boolean
+  matchedAs?: string         // if fuzzy matched, the DB scheme name
 }
 
 export interface PortfolioSummary {

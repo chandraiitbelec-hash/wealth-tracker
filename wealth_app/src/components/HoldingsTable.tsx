@@ -56,6 +56,7 @@ export function StocksTable({ holdings }: { holdings: StockHolding[] }) {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Stock</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Sector</th>
               <Th label="Qty" k="quantity" />
               <Th label="Avg Price" k="avgBuyPrice" />
               <Th label="Invested" k="buyValue" />
@@ -68,13 +69,25 @@ export function StocksTable({ holdings }: { holdings: StockHolding[] }) {
             {sorted.map((h, i) => (
               <tr key={i} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3">
-                  <div className="font-medium text-sm text-gray-900">{h.stockName}</div>
-                  <div className="text-xs text-gray-400 font-mono">{h.isin}</div>
+                  <div className="font-medium text-sm text-gray-900">{h.companyName || h.stockName}</div>
+                  <div className="text-xs text-gray-400 font-mono">{h.symbol || h.isin}</div>
+                </td>
+                <td className="px-4 py-3">
+                  {h.sector ? (
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{h.sector}</span>
+                  ) : (
+                    <span className="text-xs text-gray-300">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">{h.quantity}</td>
                 <td className="px-4 py-3 text-sm text-gray-700">₹{fmt(h.avgBuyPrice)}</td>
                 <td className="px-4 py-3 text-sm text-gray-700">{fmtCurrency(h.buyValue)}</td>
-                <td className="px-4 py-3 text-sm text-gray-700">₹{fmt(h.closingPrice)}</td>
+                <td className="px-4 py-3">
+                  <div className="text-sm text-gray-700">₹{fmt(h.closingPrice)}</div>
+                  {h.ourPrice && h.ourPrice !== h.closingPrice && (
+                    <div className="text-xs text-indigo-500">Live: ₹{fmt(h.ourPrice)}</div>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">{fmtCurrency(h.closingValue)}</td>
                 <td className="px-4 py-3">
                   <PnLBadge value={h.unrealisedPnL} percent={h.pnlPercent} />
