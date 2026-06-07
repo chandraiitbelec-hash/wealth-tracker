@@ -17,7 +17,7 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from ingestion import amfi, nse_eod, nse_live, nse_master, nse_sectors
+from ingestion import amfi, nse_eod, nse_live, nse_master, nse_sectors, nse_industry
 from utils.logger import get_logger
 from config import (
     AMFI_CRON,
@@ -92,6 +92,15 @@ def main():
         CronTrigger(day_of_week="sun", hour=2, minute=0, timezone=TZ),
         id="nse_sectors",
         name="NSE Sector & Market Cap Enrichment",
+        misfire_grace_time=7200,
+    )
+
+    # 7. NSE Industry classification — weekly, Sunday 3 AM IST (after sectors)
+    scheduler.add_job(
+        nse_industry.run,
+        CronTrigger(day_of_week="sun", hour=3, minute=0, timezone=TZ),
+        id="nse_industry",
+        name="NSE Industry Classification Enrichment",
         misfire_grace_time=7200,
     )
 

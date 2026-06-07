@@ -129,9 +129,13 @@ def run(symbols: list = None, refresh_all: bool = False):
             elif refresh_all:
                 cur.execute("SELECT security_id, symbol FROM equity_master ORDER BY symbol")
             else:
-                # Only symbols missing sector
+                # Only symbols missing sector OR market_cap_category
                 cur.execute(
-                    "SELECT security_id, symbol FROM equity_master WHERE sector IS NULL ORDER BY symbol"
+                    """
+                    SELECT security_id, symbol FROM equity_master
+                    WHERE sector IS NULL OR market_cap_category IS NULL
+                    ORDER BY symbol
+                    """
                 )
             rows = cur.fetchall()
 
