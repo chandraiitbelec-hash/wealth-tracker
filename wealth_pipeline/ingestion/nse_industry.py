@@ -1,24 +1,24 @@
 """
-NSE Industry Classification via getIndexList API
--------------------------------------------------
-For each symbol in equity_master, calls NSE's getIndexList API to discover
-which Nifty indices the stock belongs to, then derives:
-  - sector / industry   (from thematic index membership)
-  - market_cap_category (from size index membership)
+NSE Industry Classification via getSymbolData API
+--------------------------------------------------
+For each symbol in equity_master, calls NSE's getSymbolData API which returns
+secInfo.basicIndustry, secInfo.sector, secInfo.industryInfo, and secInfo.indexList.
 
-This is a ONE-TIME enrichment script — run it once to populate sectors for
-ALL symbols, not just the 500 in the major index CSVs.
+This gives us:
+  - industry            (basicIndustry — granular, e.g. "Stockbroking & Allied")
+  - sector              (sector field — broad, e.g. "Financial Services")
+  - market_cap_category (derived from indexList membership)
+
+Works for ALL listed stocks, not just Nifty index constituents.
 
 Usage:
-    python -m ingestion.nse_industry            # all symbols missing sector
-    python -m ingestion.nse_industry --all      # refresh every symbol
+    python -m ingestion.nse_industry                      # only symbols missing sector
+    python -m ingestion.nse_industry --all                # refresh everything
     python -m ingestion.nse_industry --symbols HDFCBANK INFY TCS
 
-Delays: randomised 2–5 s between requests to avoid detection.
-Session is bootstrapped via nseindia.com homepage (required for cookies).
+Delays: randomised 2–4 s between requests, 10–20 s pause every 50 calls.
 """
 
-import sys
 import time
 import random
 import argparse
@@ -29,43 +29,13 @@ from config import NSE_HEADERS
 
 log = get_logger("nse_industry")
 
-BASE_URL = "https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi"
+SYMBOL_DATA_URL = (
+    "https://www.nseindia.com/api/NextApi/apiClient/GetQuoteApi"
+    "?functionName=getSymbolData&marketType=N&series=EQ&symbol={symbol}"
+)
 
-# ── Index → (sector, industry) mapping ───────────────────────────────────────
-# Thematic indices take priority; more specific = listed first
-THEMATIC_MAP = {
-    "NIFTY BANK":                        ("Banking & Finance",        "Banks"),
-    "NIFTY PRIVATE BANK":                ("Banking & Finance",        "Private Sector Banks"),
-    "NIFTY PSU BANK":                    ("Banking & Finance",        "Public Sector Banks"),
-    "NIFTY FINANCIAL SERVICES":          ("Banking & Finance",        "Financial Services"),
-    "NIFTY FINANCIAL SERVICES 25/50":    ("Banking & Finance",        "Financial Services"),
-    "NIFTY CAPITAL MARKETS":             ("Banking & Finance",        "Capital Markets"),
-    "NIFTY IT":                          ("Information Technology",   "IT Services"),
-    "NIFTY INDIA DIGITAL":               ("Information Technology",   "Digital Services"),
-    "NIFTY INDIA INTERNET":              ("Information Technology",   "Internet Services"),
-    "NIFTY PHARMA":                      ("Pharmaceuticals",          "Pharmaceuticals"),
-    "NIFTY HEALTHCARE INDEX":            ("Pharmaceuticals",          "Healthcare"),
-    "NIFTY AUTO":                        ("Automobile",               "Automobiles"),
-    "NIFTY FMCG":                        ("FMCG",                     "FMCG"),
-    "NIFTY INDIA CONSUMPTION":           ("FMCG",                     "Consumer Goods"),
-    "NIFTY INDIA NEW AGE CONSUMPTION":   ("Consumer Discretionary",   "New Age Consumer"),
-    "NIFTY METAL":                       ("Metals & Mining",          "Metals & Mining"),
-    "NIFTY COMMODITIES":                 ("Metals & Mining",          "Commodities"),
-    "NIFTY ENERGY":                      ("Energy & Oil",             "Energy"),
-    "NIFTY OIL AND GAS":                 ("Energy & Oil",             "Oil & Gas"),
-    "NIFTY REALTY":                      ("Real Estate",              "Real Estate"),
-    "NIFTY MEDIA":                       ("Media & Entertainment",    "Media & Entertainment"),
-    "NIFTY INFRASTRUCTURE":              ("Infrastructure",           "Infrastructure"),
-    "NIFTY INDIA MANUFACTURING":         ("Manufacturing",            "Manufacturing"),
-    "NIFTY CPSE":                        ("Public Sector",            "Public Sector"),
-    "NIFTY INDIA DEFENCE":               ("Defence",                  "Defence"),
-    "NIFTY TRANSPORTATION":              ("Infrastructure",           "Transportation"),
-    "NIFTY SERVICES SECTOR":             ("Services",                 "Services"),
-    "NIFTY IPO":                         (None, None),   # too generic — skip
-}
-
-# Size index → market cap category (first match wins, so order matters)
-SIZE_MAP = [
+# Size index → market cap category (first match wins)
+SIZE_CAP_MAP = [
     ("NIFTY 50",            "LARGECAP"),
     ("NIFTY NEXT 50",       "LARGECAP"),
     ("NIFTY 100",           "LARGECAP"),
@@ -76,7 +46,7 @@ SIZE_MAP = [
     ("NIFTY SMALLCAP 100",  "SMALLCAP"),
     ("NIFTY SMALLCAP 250",  "SMALLCAP"),
     ("NIFTY MICROCAP 250",  "MICROCAP"),
-    ("NIFTY LARGEMIDCAP 250", "LARGECAP"),   # conservative — large + mid
+    ("NIFTY LARGEMIDCAP 250", "LARGECAP"),
     ("NIFTY MIDSMALLCAP 400", "MIDCAP"),
 ]
 
@@ -86,52 +56,63 @@ def _get_session() -> requests.Session:
     session.headers.update(NSE_HEADERS)
     log.info("Bootstrapping NSE session...")
     session.get("https://www.nseindia.com", timeout=15)
-    time.sleep(random.uniform(1.5, 3.0))
+    time.sleep(random.uniform(2.0, 3.0))
     return session
 
 
-def _fetch_index_list(session: requests.Session, symbol: str) -> list:
-    """Fetch the list of indices a symbol belongs to."""
-    url = f"{BASE_URL}?functionName=getIndexList&symbol={symbol}"
+def _market_cap_from_indices(index_list: list) -> str:
+    index_set = {i.upper() for i in (index_list or [])}
+    for name, cap in SIZE_CAP_MAP:
+        if name.upper() in index_set:
+            return cap
+    return None
+
+
+def _fetch_symbol_data(session: requests.Session, symbol: str) -> dict:
+    """
+    Returns dict with keys: sector, industry, market_cap_category
+    or empty dict on failure.
+    """
+    url = SYMBOL_DATA_URL.format(symbol=symbol)
     try:
         resp = session.get(url, timeout=15)
-        if resp.status_code == 401 or resp.status_code == 403:
-            log.warning("Session expired for %s — re-bootstrapping", symbol)
+
+        # Re-bootstrap on auth errors
+        if resp.status_code in (401, 403):
+            log.warning("Session expired — re-bootstrapping")
             session.get("https://www.nseindia.com", timeout=15)
-            time.sleep(random.uniform(2, 4))
+            time.sleep(random.uniform(3.0, 5.0))
             resp = session.get(url, timeout=15)
+
         resp.raise_for_status()
         data = resp.json()
-        return data if isinstance(data, list) else []
+
+        equity_response = data.get("equityResponse", [])
+        if not equity_response:
+            return {}
+
+        sec_info = equity_response[0].get("secInfo", {})
+        if not sec_info:
+            return {}
+
+        sector        = sec_info.get("sector") or sec_info.get("macro") or None
+        industry      = sec_info.get("basicIndustry") or sec_info.get("industryInfo") or None
+        index_list    = sec_info.get("indexList", [])
+        market_cap    = _market_cap_from_indices(index_list)
+
+        # Clean up "-" placeholders NSE uses for missing values
+        if sector == "-":    sector = None
+        if industry == "-":  industry = None
+
+        return {
+            "sector":              sector,
+            "industry":            industry,
+            "market_cap_category": market_cap,
+        }
+
     except Exception as exc:
-        log.warning("Failed to fetch index list for %s: %s", symbol, exc)
-        return []
-
-
-def _derive_sector_cap(indices: list) -> tuple:
-    """
-    Returns (sector, industry, market_cap_category) from index list.
-    sector/industry: first matching thematic index.
-    market_cap: first matching size index.
-    """
-    sector = industry = market_cap = None
-
-    index_set = {i.upper() for i in indices}
-
-    # Thematic → sector
-    for index_name, (sec, ind) in THEMATIC_MAP.items():
-        if index_name.upper() in index_set and sec:
-            sector = sec
-            industry = ind
-            break
-
-    # Size → market cap
-    for index_name, cap in SIZE_MAP:
-        if index_name.upper() in index_set:
-            market_cap = cap
-            break
-
-    return sector, industry, market_cap
+        log.warning("Failed to fetch data for %s: %s", symbol, exc)
+        return {}
 
 
 def run(symbols: list = None, refresh_all: bool = False):
@@ -148,52 +129,63 @@ def run(symbols: list = None, refresh_all: bool = False):
             elif refresh_all:
                 cur.execute("SELECT security_id, symbol FROM equity_master ORDER BY symbol")
             else:
-                # Only symbols missing sector data
+                # Only symbols missing sector
                 cur.execute(
                     "SELECT security_id, symbol FROM equity_master WHERE sector IS NULL ORDER BY symbol"
                 )
             rows = cur.fetchall()
 
-        log.info("Enriching %d symbols with NSE index classification...", len(rows))
+        total = len(rows)
+        log.info("Enriching %d symbols with NSE industry data...", total)
         updated = skipped = failed = 0
 
         for i, (security_id, symbol) in enumerate(rows):
-            indices = _fetch_index_list(session, symbol)
+            result = _fetch_symbol_data(session, symbol)
 
-            if not indices:
+            if not result:
                 failed += 1
-                log.debug("No index data for %s", symbol)
+                log.debug("[%d/%d] %s — no data returned", i + 1, total, symbol)
+            elif not result.get("sector") and not result.get("market_cap_category"):
+                skipped += 1
+                log.debug("[%d/%d] %s — sector/cap both null", i + 1, total, symbol)
             else:
-                sector, industry, market_cap = _derive_sector_cap(indices)
-
-                if sector or market_cap:
-                    with db.conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            UPDATE equity_master SET
-                                sector              = COALESCE(%s, sector),
-                                industry            = COALESCE(%s, industry),
-                                market_cap_category = COALESCE(%s, market_cap_category),
-                                updated_at          = CURRENT_TIMESTAMP
-                            WHERE security_id = %s
-                            """,
-                            (sector, industry, market_cap, security_id)
+                with db.conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE equity_master SET
+                            sector              = COALESCE(%s, sector),
+                            industry            = COALESCE(%s, industry),
+                            market_cap_category = COALESCE(%s, market_cap_category),
+                            updated_at          = CURRENT_TIMESTAMP
+                        WHERE security_id = %s
+                        """,
+                        (
+                            result["sector"],
+                            result["industry"],
+                            result["market_cap_category"],
+                            security_id,
                         )
-                    db.conn.commit()
-                    updated += 1
-                    log.info("[%d/%d] %s → sector=%s, cap=%s", i + 1, len(rows), symbol, sector, market_cap)
-                else:
-                    skipped += 1
-                    log.debug("[%d/%d] %s — no matching thematic index", i + 1, len(rows), symbol)
+                    )
+                db.conn.commit()
+                updated += 1
+                log.info(
+                    "[%d/%d] %-15s sector=%-30s industry=%-30s cap=%s",
+                    i + 1, total, symbol,
+                    result["sector"] or "-",
+                    result["industry"] or "-",
+                    result["market_cap_category"] or "-",
+                )
 
-            # Randomised delay: 2–5 s, longer every 50 requests to let NSE breathe
-            delay = random.uniform(2.0, 5.0)
+            # Randomised delay: 2–4 s normally, longer pause every 50 requests
             if (i + 1) % 50 == 0:
-                delay = random.uniform(10.0, 20.0)
-                log.info("Pausing %0.1fs after 50 requests...", delay)
-            time.sleep(delay)
+                pause = random.uniform(15.0, 25.0)
+                log.info("--- Pausing %.1fs after %d requests ---", pause, i + 1)
+                time.sleep(pause)
+            else:
+                time.sleep(random.uniform(2.0, 4.0))
 
-        log.info("Done — updated=%d  skipped=%d  failed=%d", updated, skipped, failed)
+        log.info("Complete — updated=%d  skipped=%d  failed=%d / total=%d",
+                 updated, skipped, failed, total)
 
     finally:
         db.close()
@@ -201,7 +193,7 @@ def run(symbols: list = None, refresh_all: bool = False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NSE industry classification enrichment")
-    parser.add_argument("--all",     action="store_true", help="Refresh all symbols, not just missing ones")
+    parser.add_argument("--all",     action="store_true", help="Refresh all symbols")
     parser.add_argument("--symbols", nargs="+",           help="Specific symbols to enrich")
     args = parser.parse_args()
 
