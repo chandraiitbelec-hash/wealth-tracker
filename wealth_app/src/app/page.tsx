@@ -1,13 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import UploadZone from '@/components/UploadZone'
+import { createClient } from '@/lib/supabase/client'
 
 export default function Home() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loggedIn, setLoggedIn] = useState(false)
+  const [savingSnapshot, setSavingSnapshot] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data }) => setLoggedIn(!!data.user))
+  }, [])
 
   const handleAnalyse = async (stocks: File | null, mf: File | null) => {
     setLoading(true)
@@ -24,6 +32,26 @@ export default function Home() {
 
       sessionStorage.setItem('portfolio', JSON.stringify(data.portfolio))
       sessionStorage.setItem('clientName', data.clientName || '')
+
+      // If logged in, auto-save snapshot in background
+      const { data: { user } } = await createClient().auth.getUser()
+      if (user) {
+        setSavingSnapshot(true)
+        try {
+          await fetch('/api/snapshots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: data.clientName || `Upload ${new Date().toLocaleDateString('en-IN')}`,
+              broker: 'Groww',
+              portfolio: data.portfolio,
+            }),
+          })
+        } catch { /* best-effort */ } finally {
+          setSavingSnapshot(false)
+        }
+      }
+
       router.push('/portfolio')
     } catch (err: any) {
       setError(err.message)
@@ -56,6 +84,21 @@ export default function Home() {
           {error}
         </div>
       )}
+
+      {/* Auth link */}
+      <div className="mt-6 text-sm text-gray-500">
+        {loggedIn ? (
+          <Link href="/dashboard" className="text-indigo-600 font-medium hover:underline">
+            ← Back to dashboard
+          </Link>
+        ) : (
+          <span>
+            Have an account?{' '}
+            <Link href="/login" className="text-indigo-600 font-medium hover:underline">Sign in</Link>
+            {' '}to save your portfolio.
+          </span>
+        )}
+      </div>
 
       <div className="mt-12 text-center">
         <p className="text-xs text-gray-400 mb-3">Supported brokers</p>
