@@ -6,6 +6,7 @@ import { ParsedPortfolio } from '@/types/portfolio'
 import SummaryCards from '@/components/SummaryCards'
 import AllocationChart from '@/components/AllocationChart'
 import { StocksTable, MFTable } from '@/components/HoldingsTable'
+import InsightsPanel from '@/components/InsightsPanel'
 import {
   applyEnrichment,
   buildPortfolioSummary,
@@ -13,15 +14,17 @@ import {
   buildMFCategoryAllocation,
   buildSectorAllocation,
 } from '@/lib/portfolio'
+import { InsightsReport } from '@/lib/insights'
 import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react'
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<ParsedPortfolio | null>(null)
   const [clientName, setClientName] = useState('')
-  const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf' | 'insights'>('overview')
   const [enriching, setEnriching] = useState(false)
   const [enriched, setEnriched] = useState(false)
   const [enrichError, setEnrichError] = useState<string | null>(null)
+  const [insights, setInsights] = useState<InsightsReport | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -69,10 +72,29 @@ export default function PortfolioPage() {
 
       setPortfolio(enrichedPortfolio)
       setEnriched(true)
+
+      // Compute insights from enriched portfolio
+      fetchInsights(enrichedPortfolio)
     } catch (err: any) {
       setEnrichError(err.message)
+      // Still compute insights from file data
+      fetchInsights(p)
     } finally {
       setEnriching(false)
+    }
+  }
+
+  const fetchInsights = async (p: ParsedPortfolio) => {
+    try {
+      const res = await fetch('/api/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p),
+      })
+      const data = await res.json()
+      if (res.ok) setInsights(data)
+    } catch {
+      // insights are best-effort
     }
   }
 
@@ -88,9 +110,10 @@ export default function PortfolioPage() {
   const hasSectors = sectorAllocation.some((s) => s.name !== 'Unknown')
 
   const tabs = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'stocks',   label: `Stocks (${portfolio.stocks.length})` },
-    { key: 'mf',       label: `Mutual Funds (${portfolio.mutualFunds.length})` },
+    { key: 'overview',  label: 'Overview' },
+    { key: 'insights',  label: '✦ Insights' },
+    { key: 'stocks',    label: `Stocks (${portfolio.stocks.length})` },
+    { key: 'mf',        label: `Mutual Funds (${portfolio.mutualFunds.length})` },
   ] as const
 
   return (
@@ -270,6 +293,10 @@ export default function PortfolioPage() {
               )}
             </div>
           </>
+        )}
+
+        {activeTab === 'insights' && (
+          <InsightsPanel report={insights} loading={enriching} />
         )}
 
         {activeTab === 'stocks' && portfolio.stocks.length > 0 && (
