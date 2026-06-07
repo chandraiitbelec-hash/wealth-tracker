@@ -40,17 +40,19 @@ function FileUpload({ label, description, accept = '.xlsx,.xls,.csv', file, onFi
       />
 
       {file ? (
-        <div className="flex items-center justify-center gap-3">
-          <CheckCircle2 className="text-green-500 w-6 h-6 shrink-0" />
-          <div className="text-left">
-            <p className="font-medium text-green-700 text-sm">{file.name}</p>
-            <p className="text-xs text-green-500">{(file.size / 1024).toFixed(1)} KB</p>
+        <div className="flex flex-col items-center gap-3">
+          <CheckCircle2 className="text-green-500 w-8 h-8 shrink-0" />
+          <div className="text-center w-full px-2">
+            <p className="font-medium text-green-700 text-sm truncate max-w-full" title={file.name}>
+              {file.name}
+            </p>
+            <p className="text-xs text-green-500 mt-0.5">{(file.size / 1024).toFixed(1)} KB · Ready</p>
           </div>
           <button
-            className="ml-auto p-1 rounded-full hover:bg-green-200 transition"
+            className="flex items-center gap-1 text-xs text-green-600 hover:text-red-500 transition px-2 py-1 rounded-lg hover:bg-red-50"
             onClick={(e) => { e.stopPropagation(); onFile(null) }}
           >
-            <X className="w-4 h-4 text-green-600" />
+            <X className="w-3 h-3" /> Remove
           </button>
         </div>
       ) : (
