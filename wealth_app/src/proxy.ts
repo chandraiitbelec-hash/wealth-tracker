@@ -1,38 +1,23 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  // Refresh session — must not write code between createServerClient and getUser
-  const { data: { user } } = await supabase.auth.getUser()
-
+/**
+ * Optimistic auth check — reads the Supabase session cookie directly
+ * without making a network call to Supabase (as recommended by Next.js 16 docs).
+ * Full session verification happens inside each page/API route.
+ */
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Protect /portfolio and /dashboard routes
+  // Check for Supabase session cookie (optimistic — not cryptographically verified here)
+  const hasSession = request.cookies.getAll().some(c =>
+    c.name.startsWith('sb-') && c.name.endsWith('-auth-token')
+  )
+
+  // Protect /portfolio and /dashboard
   const protectedRoutes = ['/portfolio', '/dashboard']
   const isProtected = protectedRoutes.some(r => pathname.startsWith(r))
 
-  if (isProtected && !user) {
+  if (isProtected && !hasSession) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
     loginUrl.searchParams.set('next', pathname)
@@ -40,13 +25,13 @@ export async function proxy(request: NextRequest) {
   }
 
   // Already logged in — redirect away from auth pages
-  if (user && (pathname === '/login' || pathname === '/signup')) {
-    const homeUrl = request.nextUrl.clone()
-    homeUrl.pathname = '/dashboard'
-    return NextResponse.redirect(homeUrl)
+  if (hasSession && (pathname === '/login' || pathname === '/signup')) {
+    const dashUrl = request.nextUrl.clone()
+    dashUrl.pathname = '/dashboard'
+    return NextResponse.redirect(dashUrl)
   }
 
-  return supabaseResponse
+  return NextResponse.next()
 }
 
 export const config = {
