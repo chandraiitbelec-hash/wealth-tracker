@@ -276,6 +276,53 @@ function diversificationScore(
   return { insights, score }
 }
 
+function sectorConcentration(stocks: StockHolding[], totalValue: number): Insight[] {
+  const insights: Insight[] = []
+  if (stocks.length === 0) return insights
+
+  // Only run if we have sector data for at least half the stocks
+  const enrichedStocks = stocks.filter(h => h.sector && h.sector !== 'Unknown')
+  if (enrichedStocks.length < stocks.length / 2) return insights
+
+  // Aggregate by sector
+  const sectorMap: Record<string, number> = {}
+  for (const h of stocks) {
+    const sector = h.sector || 'Unknown'
+    sectorMap[sector] = (sectorMap[sector] || 0) + h.closingValue
+  }
+
+  const sectorData = Object.entries(sectorMap)
+    .map(([name, value]) => ({ name, value, percent: (value / totalValue) * 100 }))
+    .sort((a, b) => b.value - a.value)
+
+  const heavySectors = sectorData.filter(s => s.name !== 'Unknown' && s.percent > 25)
+
+  if (heavySectors.length > 0) {
+    const top = heavySectors[0]
+    insights.push({
+      id: 'sector_concentration',
+      severity: top.percent > 40 ? 'warning' : 'info',
+      title: 'Sector concentration in direct equity',
+      description: `${top.name} makes up ${fmt(top.percent)}% of your total portfolio.`,
+      metric: `${fmt(top.percent)}% in ${top.name}`,
+      detail: `Your direct equity sector breakdown:\n${sectorData.filter(s => s.name !== 'Unknown').map(s => `• ${s.name}: ${fmt(s.percent)}%`).join('\n')}\n\nA single sector exceeding 25% of total portfolio increases correlation risk. Consider spreading across more sectors.`,
+      data: sectorData,
+    })
+  } else {
+    insights.push({
+      id: 'sector_balanced',
+      severity: 'positive',
+      title: 'Sector exposure is balanced',
+      description: `No single sector exceeds 25% of your portfolio.`,
+      metric: `${sectorData.length} sectors`,
+      detail: `Your direct equity sector breakdown:\n${sectorData.filter(s => s.name !== 'Unknown').map(s => `• ${s.name}: ${fmt(s.percent)}%`).join('\n')}`,
+      data: sectorData,
+    })
+  }
+
+  return insights
+}
+
 function pnlInsights(stocks: StockHolding[]): Insight[] {
   const insights: Insight[] = []
   if (stocks.length === 0) return insights
@@ -345,6 +392,7 @@ export function computeInsights(portfolio: ParsedPortfolio): InsightsReport {
     ...allocResult.insights,
     ...divResult.insights,
     ...elssResult.insights,
+    ...sectorConcentration(stocks, totalValue),
     ...pnlInsights(stocks),
   ]
 
