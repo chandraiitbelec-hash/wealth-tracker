@@ -59,9 +59,22 @@ def fetch_and_parse_bhavcopy(trade_date: date = None) -> pd.DataFrame:
         with zf.open(csv_name) as f:
             df = pd.read_csv(f, dtype=str)
 
-    df.columns = [c.strip().upper() for c in df.columns]
+    df.columns = [c.strip() for c in df.columns]
 
-    # Keep only equity series
+    # NSE switched to UDiFF format — detect and normalise column names
+    # Old format: SYMBOL, SERIES, ISIN, CLOSE
+    # New UDiFF:  TckrSymb, SctySrs, ISIN, ClsPric
+    if "TckrSymb" in df.columns:
+        df = df.rename(columns={
+            "TckrSymb": "SYMBOL",
+            "SctySrs":  "SERIES",
+            "ClsPric":  "CLOSE",
+        })
+        log.info("Detected UDiFF format — columns normalised")
+    else:
+        df.columns = [c.upper() for c in df.columns]
+
+    # Keep only equity series (EQ, BE)
     df = df[df["SERIES"].str.strip().isin(NSE_EQUITY_SERIES)].copy()
 
     df["SYMBOL"] = df["SYMBOL"].str.strip()
@@ -95,11 +108,12 @@ def run(trade_date: date = None):
             isin = row["ISIN"] if pd.notna(row["ISIN"]) and len(str(row["ISIN"])) == 12 else None
             equity_rows.append(
                 {
-                    "security_id":  sec_id,
-                    "symbol":       row["SYMBOL"],
-                    "company_name": row["SYMBOL"],   # placeholder; nse_master.py enriches this
-                    "isin":         isin,
-                    "series":       row["SERIES"],
+                    "security_id":         sec_id,
+                    "symbol":              row["SYMBOL"],
+                    "company_name":        row["SYMBOL"],  # placeholder; nse_master.py enriches this
+                    "isin":                isin,
+                    "series":              row["SERIES"],
+                    "market_cap_category": None,           # preserve whatever nse_sectors.py set
                 }
             )
             price_rows.append((sec_id, row["trade_date"], float(row["CLOSE"])))

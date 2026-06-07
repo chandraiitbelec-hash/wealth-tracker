@@ -17,7 +17,7 @@ AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
 
 # NSE EOD Bhavcopy
 NSE_BHAVCOPY_URL_TEMPLATE = (
-    "https://www.nseindia.com/content/historical/EQUITIES/bhavcopy/"
+    "https://nsearchives.nseindia.com/content/cm/"
     "BhavCopy_NSE_CM_0_0_0_{date_str}_F_0000.csv.zip"
 )
 
