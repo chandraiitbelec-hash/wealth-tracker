@@ -122,7 +122,8 @@ export function applyEnrichment(
   mfEnrichment: Record<string, any>
 ): { stocks: StockHolding[]; mf: MFHolding[] } {
   const enrichedStocks = stocks.map((h) => {
-    const e = stockEnrichment[h.isin]
+    // Groww: keyed by ISIN. Zerodha: keyed by symbol (no ISIN available)
+    const e = stockEnrichment[h.isin] ?? stockEnrichment[h.symbol ?? ''] ?? null
     if (!e) return h
 
     const ourPrice = e.our_price ? parseFloat(e.our_price) : null

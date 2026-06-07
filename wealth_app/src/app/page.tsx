@@ -43,7 +43,7 @@ export default function Home() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: data.clientName || `Upload ${new Date().toLocaleDateString('en-IN')}`,
-              broker: 'Groww',
+              broker: data.broker || 'Groww',
               portfolio: data.portfolio,
             }),
           })
@@ -106,8 +106,8 @@ export default function Home() {
           <span className="bg-white border border-gray-200 text-gray-600 text-xs font-medium px-3 py-1.5 rounded-lg shadow-sm">
             Groww ✓
           </span>
-          <span className="bg-gray-100 text-gray-400 text-xs font-medium px-3 py-1.5 rounded-lg">
-            Zerodha — coming soon
+          <span className="bg-white border border-gray-200 text-gray-600 text-xs font-medium px-3 py-1.5 rounded-lg shadow-sm">
+            Zerodha ✓
           </span>
           <span className="bg-gray-100 text-gray-400 text-xs font-medium px-3 py-1.5 rounded-lg">
             Kuvera — coming soon

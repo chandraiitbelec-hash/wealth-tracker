@@ -47,7 +47,8 @@ export default function PortfolioPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stockIsins:    p.stocks.map((s) => s.isin),
+          stockIsins:    p.stocks.map((s) => s.isin).filter(Boolean),
+          stockSymbols:  p.stocks.filter(s => !s.isin).map(s => s.symbol ?? s.stockName),
           mfSchemeNames: p.mutualFunds.map((m) => m.schemeName),
         }),
       })

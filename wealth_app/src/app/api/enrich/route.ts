@@ -14,40 +14,57 @@ export const runtime = 'nodejs'
  */
 export async function POST(req: NextRequest) {
   try {
-    const { stockIsins = [], mfSchemeNames = [] } = await req.json()
+    const { stockIsins = [], stockSymbols = [], mfSchemeNames = [] } = await req.json()
 
     const client = await pool.connect()
     try {
-      // ── Enrich stocks by ISIN ────────────────────────────────────────
+      // ── Enrich stocks by ISIN (Groww) or symbol (Zerodha) ──────────────
       let stockEnrichment: Record<string, any> = {}
-      if (stockIsins.length > 0) {
+
+      const stockQuery = `
+        SELECT
+          em.isin,
+          em.symbol,
+          em.company_name,
+          em.sector,
+          em.industry,
+          em.face_value,
+          em.listing_date,
+          em.market_cap_category,
+          dp.close_price   AS our_price,
+          dp.price_date    AS price_date
+        FROM equity_master em
+        JOIN security_master sm ON sm.id = em.security_id
+        LEFT JOIN LATERAL (
+          SELECT close_price, price_date
+          FROM daily_prices
+          WHERE security_id = em.security_id
+          ORDER BY price_date DESC
+          LIMIT 1
+        ) dp ON TRUE
+      `
+
+      // ISIN-based (Groww)
+      if (stockIsins.filter(Boolean).length > 0) {
         const { rows } = await client.query(
-          `
-          SELECT
-            em.isin,
-            em.symbol,
-            em.company_name,
-            em.sector,
-            em.industry,
-            em.face_value,
-            em.listing_date,
-            em.market_cap_category,
-            dp.close_price   AS our_price,
-            dp.price_date    AS price_date
-          FROM equity_master em
-          JOIN security_master sm ON sm.id = em.security_id
-          LEFT JOIN LATERAL (
-            SELECT close_price, price_date
-            FROM daily_prices
-            WHERE security_id = em.security_id
-            ORDER BY price_date DESC
-            LIMIT 1
-          ) dp ON TRUE
-          WHERE em.isin = ANY($1)
-          `,
-          [stockIsins]
+          stockQuery + ' WHERE em.isin = ANY($1)',
+          [stockIsins.filter(Boolean)]
         )
-        stockEnrichment = Object.fromEntries(rows.map((r) => [r.isin, r]))
+        for (const r of rows) {
+          if (r.isin) stockEnrichment[r.isin] = r
+        }
+      }
+
+      // Symbol-based (Zerodha) — for stocks with no ISIN
+      if (stockSymbols.filter(Boolean).length > 0) {
+        const { rows } = await client.query(
+          stockQuery + ' WHERE em.symbol = ANY($1)',
+          [stockSymbols.filter(Boolean)]
+        )
+        for (const r of rows) {
+          // Key by symbol so portfolio.ts can look up by symbol
+          stockEnrichment[r.symbol] = r
+        }
       }
 
       // ── Enrich MFs by scheme name (fuzzy match) ──────────────────────

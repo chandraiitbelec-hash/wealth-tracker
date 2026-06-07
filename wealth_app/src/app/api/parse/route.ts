@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { parseGrowwStocks } from '@/lib/parsers/groww-stocks'
 import { parseGrowwMF } from '@/lib/parsers/groww-mf'
+import { parseZerodhaStocks, isZerodhaStocksFile } from '@/lib/parsers/zerodha-stocks'
 import { buildParsedPortfolio } from '@/lib/portfolio'
 
 export const runtime = 'nodejs'
@@ -19,17 +20,25 @@ export async function POST(req: NextRequest) {
     let mutualFunds: any[] = []
     let statementDate = ''
     let clientName = ''
+    let broker = 'Groww'
 
-    // Parse stocks file
+    // Parse stocks file — auto-detect broker format
     if (stocksFile) {
       const buffer = await stocksFile.arrayBuffer()
-      const result = parseGrowwStocks(buffer)
-      stocks = result.holdings
-      statementDate = result.statementDate
-      clientName = result.clientName
+      if (isZerodhaStocksFile(buffer)) {
+        broker = 'Zerodha'
+        const result = parseZerodhaStocks(buffer)
+        stocks = result.holdings
+        clientName = result.clientName
+      } else {
+        const result = parseGrowwStocks(buffer)
+        stocks = result.holdings
+        statementDate = result.statementDate
+        clientName = result.clientName
+      }
     }
 
-    // Parse MF file
+    // Parse MF file (Groww format for now)
     if (mfFile) {
       const buffer = await mfFile.arrayBuffer()
       const result = parseGrowwMF(buffer)
@@ -40,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     const portfolio = buildParsedPortfolio(stocks, mutualFunds, statementDate)
 
-    return NextResponse.json({ portfolio, clientName })
+    return NextResponse.json({ portfolio, clientName, broker })
   } catch (err: any) {
     console.error('Parse error:', err)
     return NextResponse.json(
