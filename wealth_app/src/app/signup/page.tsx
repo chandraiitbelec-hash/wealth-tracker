@@ -82,7 +82,7 @@ export default function SignupPage() {
                 required
                 value={name}
                 onChange={e => setName(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 placeholder="Chandra Kanth"
               />
             </div>
@@ -93,7 +93,7 @@ export default function SignupPage() {
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 placeholder="you@example.com"
               />
             </div>
@@ -104,7 +104,7 @@ export default function SignupPage() {
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 placeholder="Min 8 characters"
               />
             </div>
