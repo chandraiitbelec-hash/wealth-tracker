@@ -36,18 +36,18 @@ SYMBOL_DATA_URL = (
 
 # Size index → market cap category (first match wins)
 SIZE_CAP_MAP = [
-    ("NIFTY 50",            "LARGECAP"),
-    ("NIFTY NEXT 50",       "LARGECAP"),
-    ("NIFTY 100",           "LARGECAP"),
-    ("NIFTY MIDCAP 50",     "MIDCAP"),
-    ("NIFTY MIDCAP 100",    "MIDCAP"),
-    ("NIFTY MIDCAP 150",    "MIDCAP"),
-    ("NIFTY SMALLCAP 50",   "SMALLCAP"),
-    ("NIFTY SMALLCAP 100",  "SMALLCAP"),
-    ("NIFTY SMALLCAP 250",  "SMALLCAP"),
-    ("NIFTY MICROCAP 250",  "MICROCAP"),
+    ("NIFTY 50",              "LARGECAP"),
+    ("NIFTY NEXT 50",         "LARGECAP"),
+    ("NIFTY 100",             "LARGECAP"),
     ("NIFTY LARGEMIDCAP 250", "LARGECAP"),
+    ("NIFTY MIDCAP 50",       "MIDCAP"),
+    ("NIFTY MIDCAP 100",      "MIDCAP"),
+    ("NIFTY MIDCAP 150",      "MIDCAP"),
     ("NIFTY MIDSMALLCAP 400", "MIDCAP"),
+    ("NIFTY SMALLCAP 50",     "SMALLCAP"),
+    ("NIFTY SMALLCAP 100",    "SMALLCAP"),
+    ("NIFTY SMALLCAP 250",    "SMALLCAP"),
+    ("NIFTY MICROCAP 250",    "SMALLCAP"),  # mapped to SMALLCAP — constraint allows only LARGECAP/MIDCAP/SMALLCAP/UNKNOWN
 ]
 
 
