@@ -75,13 +75,15 @@ function FileUpload({ label, description, accept = '.xlsx,.xls,.csv', file, onFi
 }
 
 interface UploadZoneProps {
-  onAnalyse: (stocks: File | null, mf: File | null) => void
+  onAnalyse: (stocks: File | null, mf: File | null, transactions: File | null) => void
   loading: boolean
 }
 
 export default function UploadZone({ onAnalyse, loading }: UploadZoneProps) {
   const [stocksFile, setStocksFile] = useState<File | null>(null)
   const [mfFile, setMfFile] = useState<File | null>(null)
+  const [txFile, setTxFile] = useState<File | null>(null)
+  const [showTx, setShowTx] = useState(false)
 
   const canAnalyse = stocksFile || mfFile
 
@@ -90,21 +92,44 @@ export default function UploadZone({ onAnalyse, loading }: UploadZoneProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FileUpload
           label="Stocks Holdings"
-          description="Groww equity holdings statement (.xlsx)"
+          description="Groww / Zerodha equity holdings statement (.xlsx / .csv)"
           file={stocksFile}
           onFile={setStocksFile}
         />
         <FileUpload
           label="Mutual Funds Holdings"
-          description="Groww MF holdings statement (.xlsx)"
+          description="Groww MF holdings or Zerodha P&L report (.xlsx) — also extracts ELSS 80C data"
           file={mfFile}
           onFile={setMfFile}
         />
       </div>
 
+      {/* Optional transaction upload */}
+      {!showTx ? (
+        <button
+          onClick={() => setShowTx(true)}
+          className="w-full text-xs text-indigo-500 hover:text-indigo-700 underline underline-offset-2 text-center transition"
+        >
+          + Upload MF transaction statement for accurate ELSS / 80C tax insight
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-600">MF Transaction Statement</span>
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Optional — for accurate 80C calculation</span>
+          </div>
+          <FileUpload
+            label="MF Transaction History"
+            description="Groww MF transaction statement for the financial year (.csv / .xlsx)"
+            file={txFile}
+            onFile={setTxFile}
+          />
+        </div>
+      )}
+
       <button
         disabled={!canAnalyse || loading}
-        onClick={() => onAnalyse(stocksFile, mfFile)}
+        onClick={() => onAnalyse(stocksFile, mfFile, txFile)}
         className={`w-full py-4 rounded-2xl font-semibold text-white text-sm tracking-wide transition-all duration-200
           ${canAnalyse && !loading
             ? 'bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 hover:shadow-indigo-300'

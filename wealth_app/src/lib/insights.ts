@@ -141,7 +141,7 @@ function assetAllocationHealth(
     .filter(h => (h.category || '').toLowerCase() === 'debt' || (h.schemeCategory || '').toLowerCase().includes('debt'))
     .reduce((s, h) => s + h.currentValue, 0)
 
-  const goldValue = mf
+  const commodityValue = mf
     .filter(h => {
       const name = h.schemeName.toLowerCase()
       return name.includes('gold') || name.includes('silver')
@@ -164,13 +164,13 @@ function assetAllocationHealth(
   const totalEquity = directEquityValue + equityMfValue
   const equityPct = (totalEquity / totalValue) * 100
   const debtPct = (debtValue / totalValue) * 100
-  const goldPct = (goldValue / totalValue) * 100
+  const commodityPct = (commodityValue / totalValue) * 100
 
   const allocationData = [
     { name: 'Equity (Direct)', value: directEquityValue, percent: (directEquityValue / totalValue) * 100 },
     { name: 'Equity (MF)', value: equityMfValue, percent: (equityMfValue / totalValue) * 100 },
     { name: 'Debt', value: debtValue, percent: debtPct },
-    { name: 'Gold/Silver', value: goldValue, percent: goldPct },
+    { name: 'Commodities', value: commodityValue, percent: commodityPct },
   ].filter(d => d.value > 0)
 
   if (equityPct > 90) {
@@ -201,7 +201,7 @@ function assetAllocationHealth(
       id: 'allocation_balanced',
       severity: 'info',
       title: 'Asset allocation',
-      description: `Equity ${fmt(equityPct)}% · Debt ${fmt(debtPct)}% · Gold ${fmt(goldPct)}%`,
+      description: `Equity ${fmt(equityPct)}% · Debt ${fmt(debtPct)}% · Commodities ${fmt(commodityPct)}%`,
       metric: `${fmt(equityPct)}% equity`,
       data: allocationData,
     })
@@ -210,7 +210,16 @@ function assetAllocationHealth(
   return { insights, score }
 }
 
-function elssAnalysis(mf: MFHolding[]): { insights: Insight[]; score: number } {
+export interface ELSSFYData {
+  financialYear: string
+  elssInvestedInFY: number
+  elssFunds: { schemeName: string; invested: number }[]
+}
+
+function elssAnalysis(
+  mf: MFHolding[],
+  fyData?: ELSSFYData | null
+): { insights: Insight[]; score: number } {
   const insights: Insight[] = []
 
   const elssFunds = mf.filter(h =>
@@ -220,24 +229,73 @@ function elssAnalysis(mf: MFHolding[]): { insights: Insight[]; score: number } {
     h.schemeName.toLowerCase().includes('tax saver')
   )
 
-  if (elssFunds.length === 0) return { insights: [], score: 0 }
+  if (elssFunds.length === 0 && !fyData?.elssInvestedInFY) return { insights: [], score: 0 }
 
-  const totalElssInvested = elssFunds.reduce((s, h) => s + h.investedValue, 0)
-  const totalElssValue    = elssFunds.reduce((s, h) => s + h.currentValue, 0)
   const limit80C = 150000
-  const eligible = Math.min(totalElssInvested, limit80C)
-  const taxSaving30 = eligible * 0.30   // 30% bracket
-  const taxSaving20 = eligible * 0.20   // 20% bracket
 
-  insights.push({
-    id: 'elss_summary',
-    severity: elssFunds.length > 3 ? 'warning' : 'info',
-    title: `ELSS Tax Savings — ${elssFunds.length} fund${elssFunds.length > 1 ? 's' : ''}`,
-    description: `${fmtCurrency(totalElssInvested)} invested across ${elssFunds.length} ELSS fund${elssFunds.length > 1 ? 's' : ''}.`,
-    metric: `Up to ${fmtCurrency(taxSaving30)} tax saved`,
-    detail: `80C eligible: ${fmtCurrency(eligible)} (limit ₹1.5L)\n\nEstimated tax saving:\n• 30% bracket: ${fmtCurrency(taxSaving30)}\n• 20% bracket: ${fmtCurrency(taxSaving20)}\n\nCurrent value: ${fmtCurrency(totalElssValue)}\n\n${elssFunds.length > 3 ? '⚠️ You hold more than 3 ELSS funds — most overlap significantly. Consider consolidating to 1–2 funds.' : ''}`,
-    data: elssFunds.map(h => ({ name: h.schemeName, invested: h.investedValue, current: h.currentValue })),
-  })
+  if (fyData) {
+    // Accurate: based on actual FY transaction data
+    const { financialYear, elssInvestedInFY, elssFunds: fyFunds } = fyData
+    const eligible    = Math.min(elssInvestedInFY, limit80C)
+    const taxSaving30 = eligible * 0.30
+    const taxSaving20 = eligible * 0.20
+    const remaining   = Math.max(0, limit80C - elssInvestedInFY)
+    const totalElssValue = elssFunds.reduce((s, h) => s + h.currentValue, 0)
+    const fundCount   = fyFunds.length
+
+    insights.push({
+      id: 'elss_summary',
+      severity: fundCount > 3 ? 'warning' : 'info',
+      title: `ELSS Tax Savings FY ${financialYear} — ${fundCount} fund${fundCount !== 1 ? 's' : ''}`,
+      description: `${fmtCurrency(elssInvestedInFY)} invested in ELSS this financial year (FY ${financialYear}).`,
+      metric: `Up to ${fmtCurrency(taxSaving30)} tax saved`,
+      detail: [
+        `📅 Based on your actual transactions for FY ${financialYear}`,
+        ``,
+        `80C eligible: ${fmtCurrency(eligible)} (limit ₹1.5L)`,
+        remaining > 0 ? `Room remaining: ${fmtCurrency(remaining)} — invest before Mar 31 to maximise deduction` : `✅ 80C limit fully utilised`,
+        ``,
+        `Estimated tax saving:`,
+        `• 30% bracket: ${fmtCurrency(taxSaving30)}`,
+        `• 20% bracket: ${fmtCurrency(taxSaving20)}`,
+        ``,
+        `Current ELSS portfolio value: ${fmtCurrency(totalElssValue)}`,
+        ``,
+        fundCount > 3 ? `⚠️ You hold more than 3 ELSS funds — most overlap significantly. Consider consolidating to 1–2 funds.` : '',
+      ].filter(Boolean).join('\n'),
+      data: fyFunds.map(f => ({ name: f.schemeName, invested: f.invested })),
+    })
+  } else {
+    // Estimate: based on total invested value in holdings (may include multiple years)
+    const totalElssInvested = elssFunds.reduce((s, h) => s + h.investedValue, 0)
+    const totalElssValue    = elssFunds.reduce((s, h) => s + h.currentValue, 0)
+    const eligible    = Math.min(totalElssInvested, limit80C)
+    const taxSaving30 = eligible * 0.30
+    const taxSaving20 = eligible * 0.20
+
+    insights.push({
+      id: 'elss_summary',
+      severity: elssFunds.length > 3 ? 'warning' : 'info',
+      title: `ELSS Tax Savings — ${elssFunds.length} fund${elssFunds.length !== 1 ? 's' : ''}`,
+      description: `${fmtCurrency(totalElssInvested)} invested across ${elssFunds.length} ELSS fund${elssFunds.length !== 1 ? 's' : ''}.`,
+      metric: `Up to ${fmtCurrency(taxSaving30)} tax saved`,
+      detail: [
+        `⚠️ This is an estimate based on total holdings — may include investments from previous years.`,
+        `Upload your MF transaction statement for an accurate current-FY calculation.`,
+        ``,
+        `80C eligible (estimated): ${fmtCurrency(eligible)} (limit ₹1.5L)`,
+        ``,
+        `Estimated tax saving:`,
+        `• 30% bracket: ${fmtCurrency(taxSaving30)}`,
+        `• 20% bracket: ${fmtCurrency(taxSaving20)}`,
+        ``,
+        `Current value: ${fmtCurrency(totalElssValue)}`,
+        ``,
+        elssFunds.length > 3 ? `⚠️ You hold more than 3 ELSS funds — most overlap significantly. Consider consolidating to 1–2 funds.` : '',
+      ].filter(Boolean).join('\n'),
+      data: elssFunds.map(h => ({ name: h.schemeName, invested: h.investedValue, current: h.currentValue })),
+    })
+  }
 
   return { insights, score: 0 }  // ELSS is informational, not scored
 }
@@ -323,11 +381,27 @@ function sectorConcentration(stocks: StockHolding[], totalValue: number): Insigh
   return insights
 }
 
+// Keywords that indicate bonds/NCDs/debentures — excluded from stock P&L analysis
+const BOND_KEYWORDS = ['NCD', 'BOND', 'DEBENTURE', 'TBILL', 'GSEC', 'SDL', 'TREPS']
+
+function isBondLike(h: StockHolding): boolean {
+  const name = ((h.symbol || '') + ' ' + (h.stockName || '')).toUpperCase()
+  return BOND_KEYWORDS.some(k => name.includes(k))
+}
+
 function pnlInsights(stocks: StockHolding[]): Insight[] {
   const insights: Insight[] = []
   if (stocks.length === 0) return insights
 
-  const sorted = [...stocks].sort((a, b) => b.pnlPercent - a.pnlPercent)
+  // Exclude bonds/NCDs — their "P&L" isn't comparable to equities
+  const equities = stocks.filter(h => !isBondLike(h))
+  if (equities.length === 0) return insights
+
+  // Only include holdings with a meaningful return (>-99% avoids data artifacts)
+  const sorted = [...equities]
+    .filter(h => h.pnlPercent > -99)
+    .sort((a, b) => b.pnlPercent - a.pnlPercent)
+
   const topGainers = sorted.slice(0, 3).filter(h => h.pnlPercent > 0)
   const topLosers  = sorted.slice(-3).reverse().filter(h => h.pnlPercent < 0)
 
@@ -343,12 +417,14 @@ function pnlInsights(stocks: StockHolding[]): Insight[] {
   }
 
   if (topLosers.length > 0) {
+    // Use average return as headline metric rather than worst single holding
+    const avgLoss = topLosers.reduce((s, h) => s + h.pnlPercent, 0) / topLosers.length
     insights.push({
       id: 'top_losers',
       severity: topLosers[0].pnlPercent < -20 ? 'warning' : 'info',
       title: 'Underperformers',
       description: topLosers.map(h => `${h.symbol || h.stockName} ${fmt(h.pnlPercent)}%`).join(' · '),
-      metric: `${fmt(topLosers[0].pnlPercent)}%`,
+      metric: `${fmt(avgLoss)}% avg`,
       data: topLosers,
     })
   }
@@ -358,7 +434,10 @@ function pnlInsights(stocks: StockHolding[]): Insight[] {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function computeInsights(portfolio: ParsedPortfolio): InsightsReport {
+export function computeInsights(
+  portfolio: ParsedPortfolio,
+  fyData?: ELSSFYData | null
+): InsightsReport {
   const { stocks, mutualFunds: mf, summary } = portfolio
   const totalValue = summary.totalCurrentValue
 
@@ -370,7 +449,7 @@ export function computeInsights(portfolio: ParsedPortfolio): InsightsReport {
   const planResult  = regularPlanDetector(mf)
   const allocResult = assetAllocationHealth(stocks, mf, totalValue)
   const divResult   = diversificationScore(stocks, mf)
-  const elssResult  = elssAnalysis(mf)
+  const elssResult  = elssAnalysis(mf, fyData)
 
   const scoreBreakdown = [
     { label: 'Concentration',    score: concResult.score,  max: 25 },

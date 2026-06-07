@@ -7,6 +7,7 @@ import SummaryCards from '@/components/SummaryCards'
 import AllocationChart from '@/components/AllocationChart'
 import { StocksTable, MFTable } from '@/components/HoldingsTable'
 import InsightsPanel from '@/components/InsightsPanel'
+import ExitsPanel from '@/components/ExitsPanel'
 import {
   applyEnrichment,
   buildPortfolioSummary,
@@ -21,7 +22,7 @@ import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react'
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<ParsedPortfolio | null>(null)
   const [clientName, setClientName] = useState('')
-  const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf' | 'insights'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf' | 'insights' | 'exits'>('overview')
   const [enriching, setEnriching] = useState(false)
   const [enriched, setEnriched] = useState(false)
   const [enrichError, setEnrichError] = useState<string | null>(null)
@@ -31,15 +32,17 @@ export default function PortfolioPage() {
   useEffect(() => {
     const raw = sessionStorage.getItem('portfolio')
     const name = sessionStorage.getItem('clientName')
+    const fyRaw = sessionStorage.getItem('fyData')
     if (!raw) { router.push('/'); return }
     const p = JSON.parse(raw) as ParsedPortfolio
+    const fy = fyRaw ? JSON.parse(fyRaw) : null
     setPortfolio(p)
     setClientName(name || '')
     // Auto-enrich on load
-    enrichPortfolio(p)
+    enrichPortfolio(p, fy)
   }, [])
 
-  const enrichPortfolio = async (p: ParsedPortfolio) => {
+  const enrichPortfolio = async (p: ParsedPortfolio, fy?: any) => {
     setEnriching(true)
     setEnrichError(null)
     try {
@@ -76,22 +79,22 @@ export default function PortfolioPage() {
       setEnriched(true)
 
       // Compute insights from enriched portfolio
-      fetchInsights(enrichedPortfolio)
+      fetchInsights(enrichedPortfolio, fy)
     } catch (err: any) {
       setEnrichError(err.message)
       // Still compute insights from file data
-      fetchInsights(p)
+      fetchInsights(p, fy)
     } finally {
       setEnriching(false)
     }
   }
 
-  const fetchInsights = async (p: ParsedPortfolio) => {
+  const fetchInsights = async (p: ParsedPortfolio, fy?: any) => {
     try {
       const res = await fetch('/api/insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(p),
+        body: JSON.stringify({ portfolio: p, fyData: fy ?? null }),
       })
       const data = await res.json()
       if (res.ok) setInsights(data)
@@ -116,6 +119,7 @@ export default function PortfolioPage() {
     { key: 'insights',  label: '✦ Insights' },
     { key: 'stocks',    label: `Stocks (${portfolio.stocks.length})` },
     { key: 'mf',        label: `Mutual Funds (${portfolio.mutualFunds.length})` },
+    { key: 'exits',     label: '↗ Exits' },
   ] as const
 
   return (
@@ -319,6 +323,10 @@ export default function PortfolioPage() {
             No stock holdings uploaded.
           </div>
         )}
+        {activeTab === 'exits' && (
+          <ExitsPanel />
+        )}
+
         {activeTab === 'mf' && portfolio.mutualFunds.length === 0 && (
           <div className="bg-white rounded-2xl p-12 text-center text-gray-400 border border-gray-100">
             No mutual fund holdings uploaded.

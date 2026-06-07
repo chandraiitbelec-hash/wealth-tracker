@@ -115,6 +115,29 @@ export function buildParsedPortfolio(
  * Adds sector, company name, our live price/NAV, and recalculates P&L
  * using our own prices where available.
  */
+/**
+ * ETFs get NSE's AMC sector ("Financial Services") which is misleading.
+ * Override based on what the ETF actually tracks.
+ */
+function resolveEtfSector(symbol: string, name: string): string | null {
+  const s = (symbol + ' ' + name).toLowerCase()
+  if (s.includes('gold'))    return 'Commodities – Gold ETF'
+  if (s.includes('silver'))  return 'Commodities – Silver ETF'
+  if (s.includes('nifty') || s.includes('sensex') || s.includes('bees') ||
+      s.includes('niftybees') || s.includes('juniorbees') || s.includes('bankbees') ||
+      s.includes('index') || s.includes('itetf') || s.includes('psubnkbees')) {
+    return 'Equity Index ETF'
+  }
+  if (s.includes('liquid') || s.includes('overnight') || s.includes('debt')) return 'Debt ETF'
+  return null
+}
+
+function isEtfLike(symbol: string, name: string): boolean {
+  const s = (symbol + ' ' + name).toLowerCase()
+  return s.endsWith('bees') || s.includes('etf') || s.includes('growwgold') ||
+         s.includes('growwsilver') || s.includes('netf')
+}
+
 export function applyEnrichment(
   stocks: StockHolding[],
   mf: MFHolding[],
@@ -130,12 +153,16 @@ export function applyEnrichment(
     const ourValue = ourPrice ? ourPrice * h.quantity : null
     const ourPnL = ourValue ? ourValue - h.buyValue : null
 
+    const sym  = (e.symbol ?? h.symbol ?? h.stockName ?? '')
+    const name = (e.company_name ?? h.stockName ?? '')
+    const etfSector = isEtfLike(sym, name) ? resolveEtfSector(sym, name) : null
+
     return {
       ...h,
-      symbol:            e.symbol ?? h.stockName,
-      companyName:       e.company_name ?? h.stockName,
-      sector:            e.sector ?? undefined,
-      industry:          e.industry ?? undefined,
+      symbol:            sym,
+      companyName:       name,
+      sector:            etfSector ?? e.sector ?? undefined,
+      industry:          etfSector ?? e.industry ?? undefined,
       marketCapCategory: e.market_cap_category ?? undefined,
       ourPrice:          ourPrice ?? undefined,
       ourValue:          ourValue ?? undefined,

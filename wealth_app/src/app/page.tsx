@@ -17,13 +17,14 @@ export default function Home() {
     createClient().auth.getUser().then(({ data }) => setLoggedIn(!!data.user))
   }, [])
 
-  const handleAnalyse = async (stocks: File | null, mf: File | null) => {
+  const handleAnalyse = async (stocks: File | null, mf: File | null, transactions: File | null) => {
     setLoading(true)
     setError(null)
     try {
       const form = new FormData()
       if (stocks) form.append('stocks', stocks)
       if (mf) form.append('mf', mf)
+      if (transactions) form.append('transactions', transactions)
 
       const res = await fetch('/api/parse', { method: 'POST', body: form })
       const data = await res.json()
@@ -32,6 +33,8 @@ export default function Home() {
 
       sessionStorage.setItem('portfolio', JSON.stringify(data.portfolio))
       sessionStorage.setItem('clientName', data.clientName || '')
+      if (data.fyData) sessionStorage.setItem('fyData', JSON.stringify(data.fyData))
+      else sessionStorage.removeItem('fyData')
 
       // If logged in, auto-save snapshot in background
       const { data: { user } } = await createClient().auth.getUser()
@@ -72,7 +75,7 @@ export default function Home() {
           <span className="text-indigo-600">one clear picture.</span>
         </h1>
         <p className="text-gray-500 max-w-md mx-auto text-base leading-relaxed">
-          Upload your Groww holdings statements to get a unified view of your
+          Upload your Groww or Zerodha holdings statements to get a unified view of your
           stocks and mutual funds — no account linking needed.
         </p>
       </div>
