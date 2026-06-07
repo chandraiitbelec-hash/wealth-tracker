@@ -149,7 +149,8 @@ export default function UploadZone({ onAnalyse, loading }: UploadZoneProps) {
       </button>
 
       <p className="text-center text-xs text-gray-400">
-        Your files are parsed locally and never stored. Upload either or both files.
+        Your Excel files are sent to our server only for parsing, then immediately discarded — never written to a database.
+        The extracted holding numbers are stored in your browser session only and cleared when you close the tab.
       </p>
     </div>
   )

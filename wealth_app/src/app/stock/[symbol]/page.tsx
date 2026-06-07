@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import AssetChart from '@/components/AssetChart'
+import AlternativeSentiment, { SentimentData } from '@/components/AlternativeSentiment'
 import { fmtCurrency, fmt } from '@/lib/portfolio'
 import { ArrowLeft, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
@@ -93,7 +94,7 @@ export default function StockPage() {
     </div>
   )
 
-  const { meta, currentPrice, change, changePct, isLive, priceHistory } = data
+  const { meta, currentPrice, change, changePct, isLive, priceHistory, sentiment } = data as any
   const priceUp   = (change ?? 0) > 0
   const priceDown = (change ?? 0) < 0
 
@@ -189,6 +190,9 @@ export default function StockPage() {
           )}
         </div>
 
+        {/* Alternative Sentiment */}
+        {sentiment && <AlternativeSentiment data={sentiment as SentimentData} />}
+
         {/* Fundamentals */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">Company Info</h2>
@@ -204,8 +208,8 @@ export default function StockPage() {
             <StatCard label="Series" value={meta.series ?? '—'} />
             {priceHistory.length > 0 && (() => {
               const year = priceHistory.slice(-252)
-              const hi = Math.max(...year.map(d => d.close))
-              const lo = Math.min(...year.map(d => d.close))
+              const hi = Math.max(...year.map((d: any) => d.close))
+              const lo = Math.min(...year.map((d: any) => d.close))
               return (
                 <>
                   <StatCard label="52W High" value={`₹${fmt(hi, 2)}`}

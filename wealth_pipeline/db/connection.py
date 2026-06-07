@@ -9,10 +9,18 @@ Design:
 
 import psycopg2
 from psycopg2.extras import execute_values
+from typing import List, Optional
+
 from config import DB_CONFIG
 
 
 def get_connection():
+    # A raw psycopg2 connection is used instead of a connection pool.
+    # The pipeline is a single-threaded long-lived process where each
+    # ingestion job owns its connection for its entire run and closes it
+    # when done. A pool would add complexity without benefit here — there
+    # is no concurrent access and each job's connection is short-lived
+    # relative to the scheduler interval.
     return psycopg2.connect(**DB_CONFIG)
 
 
@@ -61,7 +69,7 @@ class Database:
         self.conn.commit()
         return result
 
-    def get_security_id(self, asset_type: str, unique_code: str) -> "int | None":
+    def get_security_id(self, asset_type: str, unique_code: str) -> "Optional[int]":
         with self.conn.cursor() as cur:
             cur.execute(
                 "SELECT id FROM security_master WHERE asset_type = %s AND unique_code = %s",
@@ -113,7 +121,7 @@ class Database:
             )
         self.conn.commit()
 
-    def bulk_upsert_equity_master(self, rows: list[dict]):
+    def bulk_upsert_equity_master(self, rows: List[dict]):
         """
         rows: list of dicts with keys matching equity_master columns.
         Faster than calling upsert_equity_master() in a loop.

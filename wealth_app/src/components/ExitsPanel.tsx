@@ -143,7 +143,11 @@ function ExitRow({ exit, expanded, onToggle }: {
               <p className="font-semibold text-gray-900">
                 {exit.currentPrice !== null ? `₹${fmt(exit.currentPrice, 2)}` : '—'}
               </p>
-              {exit.priceDate && <p className="text-xs text-gray-400">{exit.priceDate}</p>}
+              {exit.priceDate && (
+                <p className="text-xs text-gray-400">
+                  as of {new Date(exit.priceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-1">Total exit value</p>

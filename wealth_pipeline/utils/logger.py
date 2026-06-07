@@ -1,5 +1,15 @@
+"""
+Centralised logger factory.
+
+All pipeline modules call get_logger(__name__) to obtain a consistently
+formatted StreamHandler logger. Using a single factory keeps log format
+changes in one place and avoids duplicate handler registration on re-import.
+"""
+
 import logging
 import sys
+
+# ── Section divider ────────────────────────────────────────────────────────────
 
 
 def get_logger(name: str) -> logging.Logger:

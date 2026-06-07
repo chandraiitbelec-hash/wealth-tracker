@@ -1,13 +1,13 @@
 """
 NSE trading holiday guard.
 
-Maintains a simple hardcoded list for the current year.
+Maintains a simple hardcoded list updated annually.
 Replace with an API call or DB table as the product matures.
 """
 
 from datetime import date
 
-# NSE holidays 2025 (add 2026 when needed)
+# NSE holidays 2025
 NSE_HOLIDAYS_2025 = {
     date(2025, 1, 26),   # Republic Day
     date(2025, 2, 26),   # Mahashivratri
@@ -28,6 +28,28 @@ NSE_HOLIDAYS_2025 = {
 }
 
 
+# NSE holidays 2026
+NSE_HOLIDAYS_2026 = {
+    date(2026, 1, 26),   # Republic Day
+    date(2026, 3, 20),   # Holi
+    date(2026, 4, 2),    # Shri Ram Navami
+    date(2026, 4, 3),    # Good Friday
+    date(2026, 4, 14),   # Dr. Baba Saheb Ambedkar Jayanti
+    date(2026, 5, 1),    # Maharashtra Day
+    date(2026, 8, 15),   # Independence Day
+    date(2026, 10, 2),   # Gandhi Jayanti
+    date(2026, 11, 9),   # Diwali Laxmi Puja
+    date(2026, 11, 10),  # Diwali Balipratipada
+    date(2026, 12, 25),  # Christmas
+}
+
+# Combined lookup — keyed by year for O(1) dispatch
+_HOLIDAYS_BY_YEAR: dict = {
+    2025: NSE_HOLIDAYS_2025,
+    2026: NSE_HOLIDAYS_2026,
+}
+
+
 def is_trading_day(check_date: date = None) -> bool:
     """Return True if the given date is a valid NSE trading day."""
     if check_date is None:
@@ -37,8 +59,9 @@ def is_trading_day(check_date: date = None) -> bool:
     if check_date.weekday() >= 5:
         return False
 
-    # Known holidays
-    if check_date in NSE_HOLIDAYS_2025:
+    # Known holidays — look up by year, fall through to True if year not in list
+    year_holidays = _HOLIDAYS_BY_YEAR.get(check_date.year, set())
+    if check_date in year_holidays:
         return False
 
     return True

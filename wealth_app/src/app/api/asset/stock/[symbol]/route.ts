@@ -1,3 +1,24 @@
+/**
+ * GET /api/asset/stock/[symbol]
+ *
+ * Path params:
+ *   symbol — NSE equity symbol (e.g. RELIANCE, HDFCBANK)
+ *
+ * Response:
+ *   {
+ *     meta:         { symbol, companyName, isin, sector, industry,
+ *                     faceValue, listingDate, marketCapCategory, series }
+ *     currentPrice: number | null         — live price or latest EOD close
+ *     change:       number | null         — price change vs previous close
+ *     changePct:    number | null         — % change vs previous close
+ *     isLive:       boolean               — true if intraday feed is active
+ *     priceHistory: { date: string; close: number }[]   — 2-year EOD series
+ *     sentiment:    SentimentIndicator | null            — blended signal (null if not yet computed)
+ *   }
+ *
+ * Returns 404 if the symbol is not in equity_master.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/lib/db'
 
@@ -43,7 +64,7 @@ export async function GET(
       WHERE security_id = $1
     `, [meta.security_id])
 
-    const priceHistory = prices.map((r: any) => ({
+    const priceHistory = prices.map((r: { price_date: Date | string; close_price: string }) => ({
       date:  r.price_date instanceof Date
         ? r.price_date.toISOString().split('T')[0]
         : String(r.price_date).split('T')[0],
@@ -56,6 +77,44 @@ export async function GET(
     const currentPrice = livePrice ?? latestClose
     const change      = currentPrice !== null && prevClose !== null ? currentPrice - prevClose : null
     const changePct   = change !== null && prevClose ? (change / prevClose) * 100 : null
+
+    // Sentiment indicators (best-effort — null if not yet computed)
+    const { rows: sentRows } = await client.query(`
+      SELECT
+        blended_score,
+        delivery_score, disclosure_score,
+        institutional_score, derivatives_score,
+        delivery_pct_5d, delivery_pct_20d, delivery_trend,
+        mf_shares_change_pct,
+        pcr, iv_skew,
+        latest_disclosure_subject, latest_disclosure_score,
+        signal, signal_reason,
+        updated_at
+      FROM stock_sentiment_indicators
+      WHERE symbol = $1
+      LIMIT 1
+    `, [symbol])
+
+    const sentiment = sentRows[0] ? {
+      blendedScore:        parseFloat(sentRows[0].blended_score),
+      subScores: {
+        delivery:     sentRows[0].delivery_score,
+        disclosure:   sentRows[0].disclosure_score,
+        institutional:sentRows[0].institutional_score,
+        derivatives:  sentRows[0].derivatives_score,
+      },
+      deliveryPct5d:       sentRows[0].delivery_pct_5d   ? parseFloat(sentRows[0].delivery_pct_5d)  : null,
+      deliveryPct20d:      sentRows[0].delivery_pct_20d  ? parseFloat(sentRows[0].delivery_pct_20d) : null,
+      deliveryTrend:       sentRows[0].delivery_trend,
+      mfSharesChangePct:   sentRows[0].mf_shares_change_pct ? parseFloat(sentRows[0].mf_shares_change_pct) : null,
+      pcr:                 sentRows[0].pcr      ? parseFloat(sentRows[0].pcr)      : null,
+      ivSkew:              sentRows[0].iv_skew  ? parseFloat(sentRows[0].iv_skew)  : null,
+      latestDisclosure:    sentRows[0].latest_disclosure_subject ?? null,
+      latestDisclosureScore: sentRows[0].latest_disclosure_score ?? null,
+      signal:              sentRows[0].signal,
+      signalReason:        sentRows[0].signal_reason,
+      updatedAt:           sentRows[0].updated_at,
+    } : null
 
     return NextResponse.json({
       meta: {
@@ -74,6 +133,7 @@ export async function GET(
       changePct,
       isLive: livePrice !== null,
       priceHistory,
+      sentiment,
     })
   } finally {
     client.release()

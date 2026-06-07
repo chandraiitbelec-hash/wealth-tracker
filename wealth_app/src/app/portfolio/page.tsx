@@ -8,6 +8,9 @@ import AllocationChart from '@/components/AllocationChart'
 import { StocksTable, MFTable } from '@/components/HoldingsTable'
 import InsightsPanel from '@/components/InsightsPanel'
 import ExitsPanel from '@/components/ExitsPanel'
+import TaxPanel from '@/components/TaxPanel'
+import LookThroughPanel from '@/components/LookThroughPanel'
+import NewsPanel from '@/components/NewsPanel'
 import {
   applyEnrichment,
   buildPortfolioSummary,
@@ -17,16 +20,17 @@ import {
   fmtCurrency,
 } from '@/lib/portfolio'
 import { InsightsReport } from '@/lib/insights'
-import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Sparkles, AlertTriangle } from 'lucide-react'
 
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<ParsedPortfolio | null>(null)
   const [clientName, setClientName] = useState('')
-  const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf' | 'insights' | 'exits'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'stocks' | 'mf' | 'insights' | 'exits' | 'tax' | 'lookahead' | 'news'>('overview')
   const [enriching, setEnriching] = useState(false)
   const [enriched, setEnriched] = useState(false)
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const [insights, setInsights] = useState<InsightsReport | null>(null)
+  const [unresolvedStocks, setUnresolvedStocks] = useState<string[]>([])
   const router = useRouter()
 
   useEffect(() => {
@@ -65,6 +69,12 @@ export default function PortfolioPage() {
         data.mfEnrichment
       )
 
+      // Detect stocks that failed enrichment (no symbol assigned after enrichment)
+      const unresolved = stocks
+        .filter(s => !s.symbol && !s.companyName)
+        .map(s => s.stockName || s.isin || 'Unknown')
+      setUnresolvedStocks(unresolved)
+
       // Rebuild derived data with enriched holdings
       const enrichedPortfolio: ParsedPortfolio = {
         ...p,
@@ -77,6 +87,17 @@ export default function PortfolioPage() {
 
       setPortfolio(enrichedPortfolio)
       setEnriched(true)
+
+      // Save snapshot for weekly digest (fire-and-forget — non-blocking)
+      const broker = sessionStorage.getItem('broker') ?? 'unknown'
+      const clientId = sessionStorage.getItem('clientId') ?? broker
+      if (clientId) {
+        fetch('/api/snapshot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userIdentifier: clientId, portfolio: enrichedPortfolio }),
+        }).catch(() => {/* best-effort */})
+      }
 
       // Compute insights from enriched portfolio
       fetchInsights(enrichedPortfolio, fy)
@@ -120,6 +141,9 @@ export default function PortfolioPage() {
     { key: 'stocks',    label: `Stocks (${portfolio.stocks.length})` },
     { key: 'mf',        label: `Mutual Funds (${portfolio.mutualFunds.length})` },
     { key: 'exits',     label: '↗ Exits' },
+    { key: 'tax',       label: '💰 Tax' },
+    { key: 'lookahead', label: '🔍 True Exposure' },
+    { key: 'news',      label: '📰 Market Pulse' },
   ] as const
 
   return (
@@ -200,6 +224,22 @@ export default function PortfolioPage() {
 
         <SummaryCards summary={portfolio.summary} />
 
+        {/* Unresolved symbol warning */}
+        {unresolvedStocks.length > 0 && (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm">
+            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-amber-800">
+                {unresolvedStocks.length} stock{unresolvedStocks.length > 1 ? 's' : ''} couldn't be matched in our database
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                These may be delisted, renamed after a corporate action, or use an old ticker. Their values are included in your totals but sector/price enrichment is unavailable:{' '}
+                <span className="font-medium">{unresolvedStocks.join(', ')}</span>
+              </p>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'overview' && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -224,8 +264,14 @@ export default function PortfolioPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {portfolio.stocks.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h3 className="font-semibold text-gray-800 mb-4">Top Stock Holdings</h3>
-                  <div className="space-y-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">Top Stock Holdings</h3>
+                  {/* Column headers */}
+                  <div className="flex items-center gap-3 mb-2 px-0">
+                    <span className="w-4" />
+                    <span className="flex-1 text-xs text-gray-400">Stock</span>
+                    <span className="text-xs text-gray-400 text-right w-28">Current Value · P&L</span>
+                  </div>
+                  <div className="space-y-3">
                     {[...portfolio.stocks]
                       .sort((a, b) => b.closingValue - a.closingValue)
                       .slice(0, 5)
@@ -233,12 +279,17 @@ export default function PortfolioPage() {
                         const pct = (h.closingValue / portfolio.summary.stocksCurrentValue) * 100
                         return (
                         <div key={i} className="flex items-start gap-3">
-                          <span className="text-xs font-bold text-gray-400 w-4 pt-0.5">{i + 1}</span>
+                          <span className="text-xs font-bold text-gray-400 w-4 pt-1">{i + 1}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-medium text-gray-800 truncate">
-                                {h.companyName || h.stockName}
-                              </p>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">
+                                  {h.companyName || h.stockName}
+                                </p>
+                                {h.sector && h.sector !== 'Unknown' && (
+                                  <p className="text-xs text-gray-400">{h.sector}</p>
+                                )}
+                              </div>
                               <div className="text-right shrink-0">
                                 <p className="text-sm font-semibold text-gray-900">{fmtCurrency(h.closingValue)}</p>
                                 <p className={`text-xs font-medium ${h.unrealisedPnL >= 0 ? 'text-green-600' : 'text-red-500'}`}>
@@ -250,11 +301,8 @@ export default function PortfolioPage() {
                               <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
                                 <div className="h-full bg-violet-400 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
                               </div>
-                              <span className="text-xs text-gray-400 shrink-0 w-10 text-right">{pct.toFixed(1)}%</span>
+                              <span className="text-xs text-gray-400 shrink-0 w-16 text-right">{pct.toFixed(1)}% of stocks</span>
                             </div>
-                            {h.sector && h.sector !== 'Unknown' && (
-                              <p className="text-xs text-gray-400 mt-0.5">{h.sector}</p>
-                            )}
                           </div>
                         </div>
                         )
@@ -265,8 +313,14 @@ export default function PortfolioPage() {
 
               {portfolio.mutualFunds.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h3 className="font-semibold text-gray-800 mb-4">Top MF Holdings</h3>
-                  <div className="space-y-4">
+                  <h3 className="font-semibold text-gray-800 mb-3">Top MF Holdings</h3>
+                  {/* Column headers */}
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="w-4" />
+                    <span className="flex-1 text-xs text-gray-400">Fund</span>
+                    <span className="text-xs text-gray-400 text-right w-28">Current Value · Returns</span>
+                  </div>
+                  <div className="space-y-3">
                     {[...portfolio.mutualFunds]
                       .sort((a, b) => b.currentValue - a.currentValue)
                       .slice(0, 5)
@@ -275,14 +329,21 @@ export default function PortfolioPage() {
                         const returns = typeof h.returns === 'number' ? h.returns : parseFloat(h.returns) || 0
                         return (
                         <div key={i} className="flex items-start gap-3">
-                          <span className="text-xs font-bold text-gray-400 w-4 pt-0.5">{i + 1}</span>
+                          <span className="text-xs font-bold text-gray-400 w-4 pt-1">{i + 1}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-medium text-gray-800 truncate">{h.schemeName}</p>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">{h.schemeName}</p>
+                                {h.plan && (
+                                  <p className={`text-xs font-medium ${h.plan === 'Direct' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                                    {h.plan}
+                                  </p>
+                                )}
+                              </div>
                               <div className="text-right shrink-0">
                                 <p className="text-sm font-semibold text-gray-900">{fmtCurrency(h.currentValue)}</p>
                                 <p className={`text-xs font-medium ${returns >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                  {h.xirr ? `${h.xirr} XIRR` : `${returns >= 0 ? '+' : ''}${returns.toFixed(1)}%`}
+                                  {h.xirr ? `${h.xirr} XIRR` : `${returns >= 0 ? '+' : ''}${returns.toFixed(1)}% returns`}
                                 </p>
                               </div>
                             </div>
@@ -290,13 +351,8 @@ export default function PortfolioPage() {
                               <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
                                 <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
                               </div>
-                              <span className="text-xs text-gray-400 shrink-0 w-10 text-right">{pct.toFixed(1)}%</span>
+                              <span className="text-xs text-gray-400 shrink-0 w-16 text-right">{pct.toFixed(1)}% of MFs</span>
                             </div>
-                            {h.plan && (
-                              <p className={`text-xs font-medium mt-0.5 ${h.plan === 'Direct' ? 'text-emerald-600' : 'text-amber-500'}`}>
-                                {h.plan}
-                              </p>
-                            )}
                           </div>
                         </div>
                         )
@@ -325,6 +381,15 @@ export default function PortfolioPage() {
         )}
         {activeTab === 'exits' && (
           <ExitsPanel />
+        )}
+        {activeTab === 'tax' && (
+          <TaxPanel holdings={portfolio.stocks} />
+        )}
+        {activeTab === 'lookahead' && (
+          <LookThroughPanel stocks={portfolio.stocks} mf={portfolio.mutualFunds} />
+        )}
+        {activeTab === 'news' && (
+          <NewsPanel stocks={portfolio.stocks} mf={portfolio.mutualFunds} />
         )}
 
         {activeTab === 'mf' && portfolio.mutualFunds.length === 0 && (
