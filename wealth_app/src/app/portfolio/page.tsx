@@ -13,6 +13,7 @@ import {
   buildAssetAllocation,
   buildMFCategoryAllocation,
   buildSectorAllocation,
+  fmtCurrency,
 } from '@/lib/portfolio'
 import { InsightsReport } from '@/lib/insights'
 import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-react'
@@ -219,37 +220,40 @@ export default function PortfolioPage() {
               {portfolio.stocks.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-semibold text-gray-800 mb-4">Top Stock Holdings</h3>
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {[...portfolio.stocks]
                       .sort((a, b) => b.closingValue - a.closingValue)
                       .slice(0, 5)
-                      .map((h, i) => (
-                        <div key={i} className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
+                      .map((h, i) => {
+                        const pct = (h.closingValue / portfolio.summary.stocksCurrentValue) * 100
+                        return (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="text-xs font-bold text-gray-400 w-4 pt-0.5">{i + 1}</span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">
-                              {h.companyName || h.stockName}
-                            </p>
-                            {h.sector && (
-                              <p className="text-xs text-gray-400">{h.sector}</p>
-                            )}
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-violet-400 rounded-full"
-                                  style={{ width: `${Math.min(100, (h.closingValue / portfolio.summary.stocksCurrentValue) * 100)}%` }}
-                                />
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                {h.companyName || h.stockName}
+                              </p>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-semibold text-gray-900">{fmtCurrency(h.closingValue)}</p>
+                                <p className={`text-xs font-medium ${h.unrealisedPnL >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  {h.pnlPercent >= 0 ? '+' : ''}{h.pnlPercent.toFixed(1)}% P&L
+                                </p>
                               </div>
-                              <span className="text-xs text-gray-500 shrink-0">
-                                {((h.closingValue / portfolio.summary.stocksCurrentValue) * 100).toFixed(1)}%
-                              </span>
                             </div>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-violet-400 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
+                              </div>
+                              <span className="text-xs text-gray-400 shrink-0 w-10 text-right">{pct.toFixed(1)}%</span>
+                            </div>
+                            {h.sector && h.sector !== 'Unknown' && (
+                              <p className="text-xs text-gray-400 mt-0.5">{h.sector}</p>
+                            )}
                           </div>
-                          <span className={`text-xs font-semibold shrink-0 ${h.unrealisedPnL >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                            {h.pnlPercent >= 0 ? '+' : ''}{h.pnlPercent.toFixed(1)}%
-                          </span>
                         </div>
-                      ))}
+                        )
+                      })}
                   </div>
                 </div>
               )}
@@ -257,37 +261,41 @@ export default function PortfolioPage() {
               {portfolio.mutualFunds.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                   <h3 className="font-semibold text-gray-800 mb-4">Top MF Holdings</h3>
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {[...portfolio.mutualFunds]
                       .sort((a, b) => b.currentValue - a.currentValue)
                       .slice(0, 5)
-                      .map((h, i) => (
-                        <div key={i} className="flex items-center gap-3">
-                          <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
+                      .map((h, i) => {
+                        const pct = (h.currentValue / portfolio.summary.mfCurrentValue) * 100
+                        const returns = typeof h.returns === 'number' ? h.returns : parseFloat(h.returns) || 0
+                        return (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="text-xs font-bold text-gray-400 w-4 pt-0.5">{i + 1}</span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">{h.schemeName}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-indigo-400 rounded-full"
-                                  style={{ width: `${Math.min(100, (h.currentValue / portfolio.summary.mfCurrentValue) * 100)}%` }}
-                                />
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium text-gray-800 truncate">{h.schemeName}</p>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-semibold text-gray-900">{fmtCurrency(h.currentValue)}</p>
+                                <p className={`text-xs font-medium ${returns >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  {h.xirr ? `${h.xirr} XIRR` : `${returns >= 0 ? '+' : ''}${returns.toFixed(1)}%`}
+                                </p>
                               </div>
-                              <span className="text-xs text-gray-500 shrink-0">
-                                {((h.currentValue / portfolio.summary.mfCurrentValue) * 100).toFixed(1)}%
-                              </span>
                             </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs font-semibold text-indigo-600">{h.xirr}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
+                              </div>
+                              <span className="text-xs text-gray-400 shrink-0 w-10 text-right">{pct.toFixed(1)}%</span>
+                            </div>
                             {h.plan && (
-                              <p className={`text-xs font-medium ${h.plan === 'Direct' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                              <p className={`text-xs font-medium mt-0.5 ${h.plan === 'Direct' ? 'text-emerald-600' : 'text-amber-500'}`}>
                                 {h.plan}
                               </p>
                             )}
                           </div>
                         </div>
-                      ))}
+                        )
+                      })}
                   </div>
                 </div>
               )}
