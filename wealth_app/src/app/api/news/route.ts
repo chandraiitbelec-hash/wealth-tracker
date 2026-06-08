@@ -141,12 +141,25 @@ async function fetchFromDB(
 ): Promise<{ articles: Article[]; hasData: boolean }> {
   const client = await pool.connect()
   try {
-    // Check if DB has recent data (within 2 hours)
-    const { rows: check } = await client.query(`
-      SELECT COUNT(*) AS n FROM news_articles
-      WHERE published_at > NOW() - INTERVAL '2 hours'
-    `)
-    if (parseInt(check[0].n) === 0) {
+    // Check if DB has recent data (within 2 hours).
+    // Catch 42P01 ("relation does not exist") — table hasn't been created
+    // yet because the pipeline hasn't run; fall back to RSS gracefully.
+    let recentCount = 0
+    try {
+      const { rows: check } = await client.query(`
+        SELECT COUNT(*) AS n FROM news_articles
+        WHERE published_at > NOW() - INTERVAL '2 hours'
+      `)
+      recentCount = parseInt(check[0].n)
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string }
+      if (pgErr?.code === '42P01') {
+        // Table doesn't exist — pipeline has never run
+        return { articles: [], hasData: false }
+      }
+      throw err  // re-throw unexpected DB errors
+    }
+    if (recentCount === 0) {
       return { articles: [], hasData: false }
     }
 

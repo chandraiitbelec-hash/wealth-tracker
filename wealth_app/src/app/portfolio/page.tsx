@@ -69,10 +69,15 @@ export default function PortfolioPage() {
         data.mfEnrichment
       )
 
-      // Detect stocks that failed enrichment (no symbol assigned after enrichment)
+      // Detect stocks that failed enrichment (no symbol assigned after enrichment).
+      // Exclude non-equity instruments (NCDs, bonds, debentures, SGBs, etc.) —
+      // these appear in Groww's stock export but are not listed equities and
+      // will never match equity_master. Showing them as "unmatched" is misleading.
+      const NON_EQUITY_KEYWORDS = /\b(ncd|bond|debenture|sgb|t-bill|tbill|gsec|g-sec|etf\s+fd|fd\s+etf|sec\s+red)\b/i
       const unresolved = stocks
         .filter(s => !s.symbol && !s.companyName)
         .map(s => s.stockName || s.isin || 'Unknown')
+        .filter(name => !NON_EQUITY_KEYWORDS.test(name))
       setUnresolvedStocks(unresolved)
 
       // Rebuild derived data with enriched holdings
