@@ -273,23 +273,24 @@ function elssAnalysis(
     const taxSaving30 = eligible * 0.30
     const taxSaving20 = eligible * 0.20
 
+    // Without a transaction file we only know total invested across all years,
+    // not what was invested in the current FY. Show the card as a prompt to
+    // upload rather than a confident tax-saving figure.
     insights.push({
       id: 'elss_summary',
-      severity: elssFunds.length > 3 ? 'warning' : 'info',
+      severity: 'warning',   // always warn — number is unreliable without file
       title: `ELSS Tax Savings — ${elssFunds.length} fund${elssFunds.length !== 1 ? 's' : ''}`,
-      description: `${fmtCurrency(totalElssInvested)} invested across ${elssFunds.length} ELSS fund${elssFunds.length !== 1 ? 's' : ''}.`,
-      metric: `Up to ${fmtCurrency(taxSaving30)} tax saved`,
+      description: `You hold ${elssFunds.length} ELSS fund${elssFunds.length !== 1 ? 's' : ''}, but we can't calculate your current-FY 80C benefit without your transaction statement.`,
+      metric: `Upload MF statement for accurate figure`,
       detail: [
-        `⚠️ This is an estimate based on total holdings — may include investments from previous years.`,
-        `Upload your MF transaction statement for an accurate current-FY calculation.`,
+        `⚠️ We only see your total invested value (${fmtCurrency(totalElssInvested)} across all years), not what you invested in the current financial year.`,
+        `80C deductions apply only to investments made in the current FY — previous years don't count again.`,
         ``,
-        `80C eligible (estimated): ${fmtCurrency(eligible)} (limit ₹1.5L)`,
+        `To get an accurate figure, upload your MF transaction statement:`,
+        `Groww → Statements → Mutual Fund Order History`,
+        `Zerodha → Console → Reports → P&L → Tradebook`,
         ``,
-        `Estimated tax saving:`,
-        `• 30% bracket: ${fmtCurrency(taxSaving30)}`,
-        `• 20% bracket: ${fmtCurrency(taxSaving20)}`,
-        ``,
-        `Current value: ${fmtCurrency(totalElssValue)}`,
+        `Once uploaded, we'll show your exact FY investment, remaining 80C room, and tax saving.`,
         ``,
         elssFunds.length > 3 ? `⚠️ You hold more than 3 ELSS funds — most overlap significantly. Consider consolidating to 1–2 funds.` : '',
       ].filter(Boolean).join('\n'),
