@@ -20,6 +20,7 @@ import {
   fmtCurrency,
 } from '@/lib/portfolio'
 import { InsightsReport } from '@/lib/insights'
+import { parseMFTransactions, summariseELSSForFY } from '@/lib/parsers/mf-transactions'
 import { ArrowLeft, RefreshCw, Sparkles, AlertTriangle } from 'lucide-react'
 
 export default function PortfolioPage() {
@@ -126,6 +127,29 @@ export default function PortfolioPage() {
       if (res.ok) setInsights(data)
     } catch {
       // insights are best-effort
+    }
+  }
+
+  /**
+   * Called from the ELSS insight card when the user drops their MF
+   * transaction statement. Parses it client-side, saves fyData to
+   * sessionStorage, and re-fetches insights so the card updates immediately.
+   */
+  const handleMFTransactionUpload = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer()
+      const transactions = parseMFTransactions(buffer)
+      const summary = summariseELSSForFY(transactions)
+      // Shape to match what the insights API expects as fyData
+      const fyData = {
+        financialYear:    summary.financialYear,
+        elssInvestedInFY: summary.elssInvestedInFY,
+        elssFunds:        summary.elssFunds,
+      }
+      sessionStorage.setItem('fyData', JSON.stringify(fyData))
+      if (portfolio) fetchInsights(portfolio, fyData)
+    } catch (e) {
+      console.error('MF transaction parse error:', e)
     }
   }
 
@@ -370,7 +394,11 @@ export default function PortfolioPage() {
         )}
 
         {activeTab === 'insights' && (
-          <InsightsPanel report={insights} loading={enriching} />
+          <InsightsPanel
+            report={insights}
+            loading={enriching}
+            onMFTransactionUpload={handleMFTransactionUpload}
+          />
         )}
 
         {activeTab === 'stocks' && portfolio.stocks.length > 0 && (

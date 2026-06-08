@@ -1,11 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Upload } from 'lucide-react'
 import { InsightsReport, Insight, Severity } from '@/lib/insights'
 
 interface Props {
-  report: InsightsReport | null
-  loading?: boolean
+  report:                InsightsReport | null
+  loading?:              boolean
+  /** Called when the user uploads an MF transaction file from the ELSS card */
+  onMFTransactionUpload?: (file: File) => void
 }
 
 const SEVERITY_CONFIG: Record<Severity, { bg: string; border: string; badge: string; dot: string; label: string }> = {
@@ -97,14 +100,34 @@ function ScoreArc({ score }: { score: number }) {
   )
 }
 
-function InsightCard({ insight }: { insight: Insight }) {
+function InsightCard({
+  insight,
+  onMFTransactionUpload,
+}: {
+  insight: Insight
+  onMFTransactionUpload?: (file: File) => void
+}) {
   const [expanded, setExpanded] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const cfg = SEVERITY_CONFIG[insight.severity]
+
+  const isELSS = insight.id === 'elss_summary' && !!onMFTransactionUpload
+
+  async function handleFile(file: File) {
+    setUploading(true)
+    try {
+      await onMFTransactionUpload!(file)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div
-      className={`rounded-2xl border p-4 ${cfg.bg} ${cfg.border} cursor-pointer transition-shadow hover:shadow-sm`}
+      className={`rounded-2xl border p-4 ${cfg.bg} ${cfg.border} transition-shadow hover:shadow-sm`}
       onClick={() => setExpanded(!expanded)}
+      style={{ cursor: 'pointer' }}
     >
       <div className="flex items-start gap-3">
         <span className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${cfg.dot}`} />
@@ -118,6 +141,34 @@ function InsightCard({ insight }: { insight: Insight }) {
             )}
           </div>
           <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{insight.description}</p>
+
+          {/* Inline upload for ELSS card */}
+          {isELSS && (
+            <div className="mt-3" onClick={e => e.stopPropagation()}>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) handleFile(f)
+                  e.target.value = ''
+                }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 rounded-xl transition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {uploading ? 'Processing…' : 'Upload MF transaction statement'}
+              </button>
+              <p className="mt-1.5 text-xs text-gray-400">
+                Groww: Account → Statements → MF Order History &nbsp;·&nbsp; Zerodha: Console → Reports → Tradebook
+              </p>
+            </div>
+          )}
 
           {expanded && insight.detail && (
             <div className="mt-3 pt-3 border-t border-gray-200">
@@ -136,7 +187,7 @@ function InsightCard({ insight }: { insight: Insight }) {
   )
 }
 
-export default function InsightsPanel({ report, loading }: Props) {
+export default function InsightsPanel({ report, loading, onMFTransactionUpload }: Props) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -219,7 +270,11 @@ export default function InsightsPanel({ report, loading }: Props) {
       {/* Insight cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {report.insights.map((insight) => (
-          <InsightCard key={insight.id} insight={insight} />
+          <InsightCard
+            key={insight.id}
+            insight={insight}
+            onMFTransactionUpload={insight.id === 'elss_summary' ? onMFTransactionUpload : undefined}
+          />
         ))}
       </div>
 
