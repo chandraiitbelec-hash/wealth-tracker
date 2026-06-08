@@ -187,18 +187,18 @@ export default function NewsPanel({ stocks, mf }: Props) {
   const [error, setError]         = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  // Build symbol list from current portfolio holdings.
-  // Memoised so it only recomputes when the stocks array reference changes.
+  // Build symbol + name lists from current portfolio holdings.
   const portfolioSymbols = useMemo(
     () => stocks.map((h) => h.symbol).filter((s): s is string => Boolean(s)),
     [stocks]
   )
+  const companyNames = useMemo(
+    () => stocks.map((h) => h.companyName || h.stockName || '').filter(Boolean),
+    [stocks]
+  )
 
-  // Stable comma-joined string used as the useCallback dependency.
-  // Avoids the anti-pattern of calling .join() directly inside the deps array,
-  // which would create a new string reference on every render even if the
-  // underlying symbol list hasn't changed.
   const symbolsParam = useMemo(() => portfolioSymbols.join(','), [portfolioSymbols])
+  const namesParam   = useMemo(() => companyNames.join(','), [companyNames])
 
   const fetchNews = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -207,9 +207,8 @@ export default function NewsPanel({ stocks, mf }: Props) {
 
     try {
       const params = new URLSearchParams({ limit: '20' })
-      if (symbolsParam) {
-        params.set('symbols', symbolsParam)
-      }
+      if (symbolsParam) params.set('symbols', symbolsParam)
+      if (namesParam)   params.set('names',   namesParam)
       const res = await fetch(`/api/news?${params}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
@@ -221,7 +220,7 @@ export default function NewsPanel({ stocks, mf }: Props) {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [symbolsParam])
+  }, [symbolsParam, namesParam])
 
   useEffect(() => { fetchNews() }, [fetchNews])
 

@@ -43,17 +43,25 @@ export interface Article {
 // ── Curated fallback feeds (subset — fast to fetch synchronously) ─────────────
 
 const FALLBACK_FEEDS = [
-  { url: 'https://economictimes.indiatimes.com/markets/rss.cms',           source: 'economic_times', category: 'market'  },
-  { url: 'https://economictimes.indiatimes.com/news/economy/rss.cms',      source: 'economic_times', category: 'economy' },
+  // Market
   { url: 'https://www.moneycontrol.com/rss/MCtopnews.xml',                source: 'moneycontrol',   category: 'market'  },
+  { url: 'https://www.livemint.com/rss/markets',                           source: 'livemint',       category: 'market'  },
+  { url: 'https://www.business-standard.com/rss/markets-106.rss',         source: 'business_std',   category: 'market'  },
+  // Economy
   { url: 'https://www.business-standard.com/rss/economy-policy-10601.rss', source: 'business_std',  category: 'economy' },
-  { url: 'https://economictimes.indiatimes.com/mf/rss.cms',               source: 'economic_times', category: 'mf'      },
+  { url: 'https://www.moneycontrol.com/rss/economy.xml',                  source: 'moneycontrol',   category: 'economy' },
+  // Companies / Stocks
+  { url: 'https://www.business-standard.com/rss/companies-101.rss',       source: 'business_std',   category: 'stocks'  },
+  { url: 'https://www.moneycontrol.com/rss/results.xml',                  source: 'moneycontrol',   category: 'stocks'  },
+  // Mutual funds (livemint money is the best live option right now)
+  { url: 'https://www.livemint.com/rss/money',                            source: 'livemint',       category: 'mf'      },
 ]
 
 const SOURCE_LABELS: Record<string, string> = {
   economic_times: 'Economic Times',
   moneycontrol:   'Moneycontrol',
   business_std:   'Business Standard',
+  livemint:       'Livemint',
   mint:           'Mint',
   rbi:            'RBI',
   sebi:           'SEBI',
@@ -104,7 +112,7 @@ function parseRSSXml(xml: string, source: string, category: string): Article[] {
   return items
 }
 
-async function fetchRSSFallback(portfolioSymbols: string[]): Promise<Article[]> {
+async function fetchRSSFallback(portfolioSymbols: string[], companyNames: string[] = []): Promise<Article[]> {
   const results = await Promise.allSettled(
     FALLBACK_FEEDS.map(async ({ url, source, category }) => {
       const r = await fetch(url, {
@@ -122,12 +130,30 @@ async function fetchRSSFallback(portfolioSymbols: string[]): Promise<Article[]> 
     if (r.status === 'fulfilled') allArticles.push(...r.value)
   }
 
-  // Tag portfolio symbols in fallback mode (simple title match)
+  // Tag portfolio symbols in fallback mode.
+  // Match against both NSE symbol (e.g. HDFCBANK) and company name (e.g. HDFC Bank),
+  // but only store the NSE symbol in taggedSymbols so downstream filtering works.
   const upperSymbols = portfolioSymbols.map(s => s.toUpperCase())
+
+  // Build lookup: normalised company-name keyword → NSE symbol
+  // e.g. "HDFC BANK" → "HDFCBANK"
+  const nameToSymbol: { keywords: string; symbol: string }[] = companyNames
+    .map((name, i) => ({ keywords: name.toUpperCase().replace(/\s+LTD\.?$/i, '').trim(), symbol: portfolioSymbols[i] ?? '' }))
+    .filter(x => x.symbol && x.keywords.length >= 4)
+
   for (const a of allArticles) {
-    const titleUpper = a.title.toUpperCase()
-    const matched = upperSymbols.filter(s => titleUpper.includes(s))
-    if (matched.length > 0) a.taggedSymbols = matched
+    const titleUpper = (a.title + ' ' + (a.summary ?? '')).toUpperCase()
+
+    // Direct symbol match
+    const symbolMatches = upperSymbols.filter(s => s.length >= 3 && titleUpper.includes(s))
+
+    // Company-name match
+    const nameMatches = nameToSymbol
+      .filter(({ keywords }) => titleUpper.includes(keywords))
+      .map(({ symbol }) => symbol)
+
+    const allMatches = [...new Set([...symbolMatches, ...nameMatches])]
+    if (allMatches.length > 0) a.taggedSymbols = allMatches
   }
 
   return allArticles
@@ -238,10 +264,14 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const symbolsParam = searchParams.get('symbols') ?? ''
+    const namesParam   = searchParams.get('names')   ?? ''
     const limitParam   = parseInt(searchParams.get('limit') ?? '20', 10)
 
     const portfolioSymbols = symbolsParam
       ? symbolsParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+      : []
+    const companyNames = namesParam
+      ? namesParam.split(',').map(s => s.trim()).filter(Boolean)
       : []
     const limit = Math.min(50, Math.max(5, limitParam))
 
@@ -256,7 +286,7 @@ export async function GET(req: NextRequest) {
       source = 'db'
     } else {
       // Pipeline hasn't run yet — fetch RSS directly
-      allArticles = await fetchRSSFallback(portfolioSymbols)
+      allArticles = await fetchRSSFallback(portfolioSymbols, companyNames)
       source = 'rss_fallback'
     }
 
