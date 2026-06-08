@@ -26,9 +26,10 @@ export const runtime = 'nodejs'
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { symbol: string } }
+  { params }: { params: Promise<{ symbol: string }> }
 ) {
-  const symbol = params.symbol.toUpperCase()
+  const { symbol: rawSymbol } = await params
+  const symbol = rawSymbol.toUpperCase()
   const client = await pool.connect()
   try {
     // Company fundamentals

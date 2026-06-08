@@ -17,9 +17,9 @@ function pointReturn(startNav: number, endNav: number): number {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { schemeCode: string } }
+  { params }: { params: Promise<{ schemeCode: string }> }
 ) {
-  const schemeCode = params.schemeCode
+  const { schemeCode } = await params
   const client = await pool.connect()
   try {
     // Fund info
